@@ -1,17 +1,34 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from io import BytesIO
 from pathlib import PurePath
 from typing import Any
 
+import httpx
 from pydantic_ai import Agent, BinaryContent
-from pypdf import PdfReader
-from pypdf.generic import ContentStream
+from pydantic_ai.exceptions import ModelHTTPError
+from pypdf import PageObject, PdfReader
+from pypdf.generic import ArrayObject, ContentStream, StreamObject
 
 from .config import Settings
-from .models import DocumentExtraction
+from .limits import (
+    EXTRACTION_TIMEOUT_SECONDS,
+    MAX_CONTENT_STREAM_BYTES,
+    MAX_PDF_PAGES,
+    MAX_PREVIEW_CANDIDATES,
+    MAX_PREVIEW_IMAGES,
+    MAX_PREVIEW_PIXELS,
+    MAX_PREVIEW_SCAN_PAGES,
+    MAX_STREAM_OPERATIONS,
+    MIN_PREVIEW_SIDE,
+    PROVIDER_BACKOFF_SECONDS,
+    PROVIDER_RETRIES,
+    upload_limit_message,
+)
+from .models import EXPECTED_FIELDS, DocumentExtraction
 from .prompts import EXTRACTION_INSTRUCTIONS
 
 IMAGE_MEDIA_TYPES = {
@@ -20,7 +37,9 @@ IMAGE_MEDIA_TYPES = {
     ".png": "image/png",
 }
 ALLOWED_EXTENSIONS = {".pdf", *IMAGE_MEDIA_TYPES}
-MAX_PREVIEW_IMAGES = 4
+IDENTITY_MATRIX = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+Matrix = tuple[float, float, float, float, float, float]
 
 
 class UploadValidationError(ValueError):
@@ -29,6 +48,34 @@ class UploadValidationError(ValueError):
 
 class ProviderNotConfiguredError(RuntimeError):
     """Raised before a request when provider credentials are missing."""
+
+
+class ExtractionTimeoutError(RuntimeError):
+    """Raised when the provider does not answer inside the local time budget."""
+
+
+class ProviderUnavailableError(RuntimeError):
+    """Raised when the model service is temporarily unavailable."""
+
+
+class ProviderRateLimitError(RuntimeError):
+    """Raised when the provider refuses the request because of quota or rate limit."""
+
+
+class ProviderConnectionError(RuntimeError):
+    """Raised when the provider cannot be reached from the local machine."""
+
+
+def _provider_error(error: ModelHTTPError) -> RuntimeError:
+    if error.status_code == 429:
+        return ProviderRateLimitError(
+            "O provedor atingiu um limite temporário. Tente novamente em instantes."
+        )
+    if error.status_code in {500, 502, 503, 504}:
+        return ProviderUnavailableError(
+            "O provedor de IA está temporariamente indisponível. Tente novamente."
+        )
+    return error
 
 
 class DocumentExtractor:
@@ -47,7 +94,7 @@ class DocumentExtractor:
             output_type=DocumentExtraction,
             instructions=EXTRACTION_INSTRUCTIONS,
             model_settings=model_settings,
-            retries=2,
+            retries=PROVIDER_RETRIES,
         )
 
     async def extract(
@@ -56,7 +103,7 @@ class DocumentExtractor:
         content: bytes,
         content_type: str | None = None,
     ) -> dict[str, Any]:
-        validate_upload(
+        document = validate_upload(
             file_name=file_name,
             content=content,
             max_upload_bytes=self.settings.max_upload_bytes,
@@ -70,8 +117,8 @@ class DocumentExtractor:
             self.agent = self._build_agent()
 
         media_type = media_type_for(file_name, content_type)
-        pages = page_count(file_name, content)
-        previews = extract_pdf_previews(file_name, content)
+        pages = len(document.pages) if document is not None else 1
+        previews = extract_pdf_previews(document)
         prompt = (
             "Extraia os campos do documento usando somente o conteúdo visível. "
             "Quando houver uma imagem complementar da frente, use-a para ler os "
@@ -84,7 +131,13 @@ class DocumentExtractor:
         if previews:
             message_parts.append(_preview_binary_content(previews[0]))
         started = time.perf_counter()
-        result = await self.agent.run(message_parts)
+        try:
+            async with asyncio.timeout(EXTRACTION_TIMEOUT_SECONDS):
+                result = await self._run_provider_with_backoff(message_parts)
+        except TimeoutError as error:
+            raise ExtractionTimeoutError(
+                "O provedor não respondeu dentro do tempo limite local."
+            ) from error
         extraction = result.output
         if not isinstance(extraction, DocumentExtraction):
             extraction = DocumentExtraction.model_validate(extraction)
@@ -96,8 +149,28 @@ class DocumentExtractor:
             previews=previews,
         )
 
+    async def _run_provider_with_backoff(self, message_parts: list[object]) -> Any:
+        for attempt in range(PROVIDER_RETRIES + 1):
+            try:
+                return await self.agent.run(message_parts)
+            except ModelHTTPError as error:
+                retryable = error.status_code in {429, 500, 502, 503, 504}
+                if not retryable or attempt >= PROVIDER_RETRIES:
+                    raise _provider_error(error) from error
+            except (httpx.ConnectError, httpx.TimeoutException) as error:
+                if attempt >= PROVIDER_RETRIES:
+                    raise ProviderConnectionError(
+                        "Não foi possível conectar ao provedor de IA."
+                    ) from error
+            await asyncio.sleep(PROVIDER_BACKOFF_SECONDS * (2**attempt))
+        raise ProviderUnavailableError("O provedor de IA está temporariamente indisponível.")
 
-def validate_upload(file_name: str | None, content: bytes, max_upload_bytes: int) -> None:
+
+def validate_upload(
+    file_name: str | None, content: bytes, max_upload_bytes: int
+) -> PdfReader | None:
+    """Validate the upload and return the single parsed PDF, when the upload is one."""
+
     if not file_name:
         raise UploadValidationError("Selecione um arquivo.")
 
@@ -107,22 +180,28 @@ def validate_upload(file_name: str | None, content: bytes, max_upload_bytes: int
     if not content:
         raise UploadValidationError("O arquivo está vazio.")
     if len(content) > max_upload_bytes:
-        limit_mb = max_upload_bytes / (1024 * 1024)
-        raise UploadValidationError(f"O arquivo excede o limite local de {limit_mb:g} MB.")
+        raise UploadValidationError(upload_limit_message(max_upload_bytes))
 
     if extension == ".pdf":
         if not content.startswith(b"%PDF-"):
             raise UploadValidationError("O arquivo não parece ser um PDF válido.")
         try:
-            pages = len(PdfReader(BytesIO(content)).pages)
+            document = PdfReader(BytesIO(content))
+            pages = len(document.pages)
         except Exception as error:
             raise UploadValidationError("O arquivo não parece ser um PDF válido.") from error
         if pages < 1:
             raise UploadValidationError("O PDF não contém nenhuma página válida.")
+        if pages > MAX_PDF_PAGES:
+            raise UploadValidationError(
+                f"O PDF tem {pages} páginas e o limite local é de {MAX_PDF_PAGES}."
+            )
+        return document
     if extension == ".png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
         raise UploadValidationError("O arquivo não parece ser um PNG válido.")
     if extension in {".jpg", ".jpeg"} and not content.startswith(b"\xff\xd8\xff"):
         raise UploadValidationError("O arquivo não parece ser uma imagem JPEG válida.")
+    return None
 
 
 def media_type_for(file_name: str, content_type: str | None = None) -> str:
@@ -132,19 +211,7 @@ def media_type_for(file_name: str, content_type: str | None = None) -> str:
     return IMAGE_MEDIA_TYPES[extension]
 
 
-def page_count(file_name: str, content: bytes) -> int:
-    if PurePath(file_name).suffix.lower() != ".pdf":
-        return 1
-    try:
-        return len(PdfReader(BytesIO(content)).pages)
-    except Exception:
-        return 0
-
-
-def _multiply_matrix(
-    left: tuple[float, float, float, float, float, float],
-    right: tuple[float, float, float, float, float, float],
-) -> tuple[float, float, float, float, float, float]:
+def _multiply_matrix(left: Matrix, right: Matrix) -> Matrix:
     la, lb, lc, ld, le, lf = left
     ra, rb, rc, rd, re, rf = right
     return (
@@ -157,103 +224,237 @@ def _multiply_matrix(
     )
 
 
-def extract_pdf_previews(file_name: str, content: bytes) -> list[dict[str, Any]]:
+def _placement_box(
+    ctm: Matrix, page_width: float, page_height: float
+) -> tuple[float, float, float, float] | None:
+    """Turn the current transformation matrix into a normalized page rectangle."""
+
+    a, b, c, d, e, f = ctm
+    points = ((e, f), (a + e, b + f), (c + e, d + f), (a + c + e, b + d + f))
+    left = max(0.0, min(point[0] for point in points))
+    right = min(page_width, max(point[0] for point in points))
+    y_values = [point[1] for point in points]
+    top = min(y_values) if d < 0 else page_height - max(y_values)
+    bottom = max(y_values) if d < 0 else page_height - min(y_values)
+    top = max(0.0, min(page_height, top))
+    bottom = max(0.0, min(page_height, bottom))
+    if right <= left or bottom <= top:
+        return None
+    return (
+        round(left / page_width, 4),
+        round(top / page_height, 4),
+        round((right - left) / page_width, 4),
+        round((bottom - top) / page_height, 4),
+    )
+
+
+def _image_xobject_sizes(page: PageObject) -> dict[str, tuple[int, int]]:
+    """Read the declared size of every image XObject without decoding a single pixel."""
+
+    resources = page.get("/Resources")
+    if resources is None:
+        return {}
+    xobjects = resources.get_object().get("/XObject")
+    if xobjects is None:
+        return {}
+    xobjects = xobjects.get_object()
+    sizes: dict[str, tuple[int, int]] = {}
+    for name in xobjects:
+        try:
+            xobject = xobjects[name].get_object()
+            if xobject.get("/Subtype") != "/Image":
+                continue
+            width = int(xobject["/Width"])
+            height = int(xobject["/Height"])
+        except Exception:
+            continue
+        if width > 0 and height > 0:
+            sizes[str(name)] = (width, height)
+    return sizes
+
+
+def _page_content_data(page: PageObject) -> bytes:
+    """Return the decoded content stream, or nothing when it is too large to walk."""
+
+    if "/Contents" not in page:
+        return b""
+    contents = page["/Contents"]
+    if isinstance(contents, StreamObject):
+        data = contents.get_data()
+        return b"" if len(data) > MAX_CONTENT_STREAM_BYTES else data
+    if not isinstance(contents, ArrayObject):
+        return b""
+    chunks: list[bytes] = []
+    total = 0
+    for item in contents:
+        resolved = item.get_object()
+        if not isinstance(resolved, StreamObject):
+            continue
+        chunk = resolved.get_data()
+        total += len(chunk) + 1
+        if total > MAX_CONTENT_STREAM_BYTES:
+            return b""
+        chunks.append(chunk)
+    return b"\n".join(chunks)
+
+
+def _page_preview_candidates(
+    page_number: int, page: PageObject, document: PdfReader, budget: int
+) -> list[dict[str, Any]]:
+    """Locate the drawable images of one page using only declared metadata."""
+
+    page_width = float(page.mediabox.width)
+    page_height = float(page.mediabox.height)
+    if page_width <= 0 or page_height <= 0:
+        return []
+    sizes = _image_xobject_sizes(page)
+    if not sizes:
+        return []
+    data = _page_content_data(page)
+    if not data:
+        return []
+    stream = ContentStream(None, document)
+    stream.set_data(data)
+
+    candidates: list[dict[str, Any]] = []
+    drawn: set[str] = set()
+    ctm = IDENTITY_MATRIX
+    stack: list[Matrix] = []
+    operations_count = 0
+    for operands, operator in stream.operations:
+        operations_count += 1
+        if operations_count > MAX_STREAM_OPERATIONS:
+            break
+        if operator == b"q":
+            if len(stack) < 32:
+                stack.append(ctm)
+        elif operator == b"Q":
+            ctm = stack.pop() if stack else IDENTITY_MATRIX
+        elif operator == b"cm":
+            if len(operands) != 6:
+                continue
+            try:
+                ctm = _multiply_matrix(ctm, tuple(float(value) for value in operands))
+            except (TypeError, ValueError):
+                continue
+        elif operator == b"Do":
+            if not operands:
+                continue
+            name = str(operands[0])
+            if name in drawn:
+                # The same XObject drawn again is the same preview.
+                continue
+            size = sizes.get(name)
+            if size is None:
+                continue
+            image_width, image_height = size
+            if min(image_width, image_height) < MIN_PREVIEW_SIDE:
+                continue
+            if image_width * image_height > MAX_PREVIEW_PIXELS:
+                continue
+            box = _placement_box(ctm, page_width, page_height)
+            if box is None:
+                continue
+            drawn.add(name)
+            left, top, width, height = box
+            candidates.append(
+                {
+                    "page": page_number,
+                    "name": name,
+                    "pixels": image_width * image_height,
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height,
+                    "sourceWidth": image_width,
+                    "sourceHeight": image_height,
+                }
+            )
+            if len(candidates) >= budget:
+                break
+    return candidates
+
+
+def _encode_preview(document: PdfReader, candidate: dict[str, Any]) -> dict[str, Any] | None:
+    """Decode and encode one chosen image, after the selection is already settled."""
+
+    try:
+        image_file = document.pages[candidate["page"] - 1].images[candidate["name"]]
+        image = image_file.image
+        if image is None:
+            return None
+        is_jpeg = (getattr(image, "format", None) or "").lower() in {"jpeg", "jpg"}
+        max_dim = 1600
+        needs_resize = max(image.width, image.height) > max_dim
+        if needs_resize:
+            scale = max_dim / max(image.width, image.height)
+            new_size = (int(image.width * scale), int(image.height * scale))
+            image = image.resize(new_size)
+
+        if is_jpeg and not needs_resize:
+            image_data = image_file.data
+            media_type = "image/jpeg"
+        else:
+            image_stream = BytesIO()
+            if getattr(image, "mode", None) in {"RGBA", "P", "LA"}:
+                image = image.convert("RGB")
+            image.save(image_stream, format="JPEG", quality=85, optimize=True)
+            image_data = image_stream.getvalue()
+            media_type = "image/jpeg"
+    except Exception:
+        return None
+    encoded = base64.b64encode(image_data).decode("ascii")
+    preview = {key: value for key, value in candidate.items() if key not in {"name", "pixels"}}
+    preview["label"] = str(candidate["name"]).lstrip("/")
+    preview["primary"] = False
+    preview["src"] = f"data:{media_type};base64,{encoded}"
+    preview["_raw_data"] = image_data
+    preview["_media_type"] = media_type
+    return preview
+
+
+def extract_pdf_previews(document: PdfReader | None) -> list[dict[str, Any]]:
     """Extract prominent embedded PDF images for a local, zoomable preview."""
 
-    if PurePath(file_name).suffix.lower() != ".pdf":
+    if document is None:
         return []
+    candidates: list[dict[str, Any]] = []
     try:
-        reader = PdfReader(BytesIO(content))
-        previews: list[dict[str, Any]] = []
-        for page_number, page in enumerate(reader.pages, start=1):
-            page_width = float(page.mediabox.width)
-            page_height = float(page.mediabox.height)
-            images = {
-                str(image.name).split(".", maxsplit=1)[0].lstrip("/"): image
-                for image in page.images
-            }
-            if not images:
+        for page_number, page in enumerate(document.pages, start=1):
+            if page_number > MAX_PREVIEW_SCAN_PAGES:
+                break
+            budget = MAX_PREVIEW_CANDIDATES - len(candidates)
+            if budget <= 0:
+                break
+            try:
+                candidates.extend(
+                    _page_preview_candidates(page_number, page, document, budget)
+                )
+            except Exception:
                 continue
-
-            ctm = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-            stack: list[tuple[float, float, float, float, float, float]] = []
-            for operands, operator in ContentStream(page.get_contents(), reader).operations:
-                if operator == b"q":
-                    stack.append(ctm)
-                elif operator == b"Q":
-                    ctm = stack.pop() if stack else (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-                elif operator == b"cm":
-                    ctm = _multiply_matrix(ctm, tuple(float(value) for value in operands))
-                elif operator == b"Do":
-                    image_name = str(operands[0]).lstrip("/")
-                    image = images.get(image_name)
-                    if image is None:
-                        continue
-                    image_width = int(image.image.width)
-                    image_height = int(image.image.height)
-                    if min(image_width, image_height) < 200:
-                        continue
-                    a, b, c, d, e, f = ctm
-                    points = (
-                        (e, f),
-                        (a + e, b + f),
-                        (c + e, d + f),
-                        (a + c + e, b + d + f),
-                    )
-                    left = max(0.0, min(point[0] for point in points))
-                    right = min(page_width, max(point[0] for point in points))
-                    y_values = [point[1] for point in points]
-                    top = min(y_values) if d < 0 else page_height - max(y_values)
-                    bottom = max(y_values) if d < 0 else page_height - min(y_values)
-                    top = max(0.0, min(page_height, top))
-                    bottom = max(0.0, min(page_height, bottom))
-                    if right <= left or bottom <= top:
-                        continue
-                    image_format = (getattr(image.image, "format", None) or "").lower()
-                    if image_format in {"jpeg", "jpg"}:
-                        image_data = image.data
-                        media_type = "image/jpeg"
-                    else:
-                        image_stream = BytesIO()
-                        image.image.save(image_stream, format="PNG")
-                        image_data = image_stream.getvalue()
-                        media_type = "image/png"
-                    image_src = (
-                        f"data:{media_type};base64,"
-                        f"{base64.b64encode(image_data).decode('ascii')}"
-                    )
-                    previews.append(
-                        {
-                            "page": page_number,
-                            "label": image_name,
-                            "primary": False,
-                            "src": image_src,
-                            "left": round(left / page_width, 4),
-                            "top": round(top / page_height, 4),
-                            "width": round((right - left) / page_width, 4),
-                            "height": round((bottom - top) / page_height, 4),
-                            "sourceWidth": image_width,
-                            "sourceHeight": image_height,
-                        }
-                    )
-
-        previews.sort(
-            key=lambda item: (
-                item["page"],
-                -item["sourceWidth"] * item["sourceHeight"],
-                item["top"],
-            )
-        )
-        previews = previews[:MAX_PREVIEW_IMAGES]
-        for index, preview in enumerate(previews):
-            preview["primary"] = index == 0
-            preview["label"] = "Frente" if index == 0 else "Verso" if index == 1 else "Detalhe"
-        return previews
     except Exception:
         return []
 
+    candidates.sort(key=lambda item: (item["page"], -item["pixels"], item["top"]))
+    previews: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if len(previews) >= MAX_PREVIEW_IMAGES:
+            break
+        preview = _encode_preview(document, candidate)
+        if preview is not None:
+            previews.append(preview)
+    for index, preview in enumerate(previews):
+        preview["primary"] = index == 0
+        preview["label"] = "Frente" if index == 0 else "Verso" if index == 1 else "Detalhe"
+    return previews
+
 
 def _preview_binary_content(preview: dict[str, Any]) -> BinaryContent:
+    if "_raw_data" in preview and "_media_type" in preview:
+        return BinaryContent(
+            data=preview["_raw_data"],
+            media_type=preview["_media_type"],
+        )
     source = str(preview["src"])
     media_header, encoded = source.split(",", maxsplit=1)
     media_type = media_header.removeprefix("data:").split(";", maxsplit=1)[0]
@@ -296,14 +497,25 @@ def to_api_response(
             "confidence": value.confidence,
             "label": FIELD_LABELS[key],
         }
+    expected = EXPECTED_FIELDS.get(extraction.kind, EXPECTED_FIELDS["unknown"])
+    missing = [
+        {"key": API_FIELD_NAMES.get(key, key), "label": FIELD_LABELS[key]}
+        for key in expected
+        if API_FIELD_NAMES.get(key, key) not in fields
+    ]
+    cleaned_previews = [
+        {k: v for k, v in p.items() if not k.startswith("_")}
+        for p in (previews or [])
+    ]
     return {
         "kind": extraction.kind,
         "pages": pages,
         "fields": fields,
+        "missing": missing,
         "text": format_text(extraction),
         "warnings": extraction.warnings,
         "durationMs": duration_ms,
-        "previews": previews or [],
+        "previews": cleaned_previews,
     }
 
 

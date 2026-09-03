@@ -38,5 +38,5 @@ uv run ruff check src tests
 uv run python -m compileall -q src tests
 uv lock --check
 uv pip check
-node -e 'const fs=require("fs"),vm=require("vm"); const h=fs.readFileSync("src/doc_extractor_pydantic/static/index.html","utf8"); new vm.Script(h.match(/<script>([\s\S]*)<\/script>/)[1]); console.log("JS_OK")'
+node --check src/doc_extractor_pydantic/static/app.js
 ```

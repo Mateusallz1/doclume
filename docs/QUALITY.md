@@ -8,7 +8,7 @@ uv run ruff check src tests
 uv run python -m compileall -q src tests
 uv lock --check
 uv pip check
-node -e 'const fs=require("fs"),vm=require("vm"); const h=fs.readFileSync("src/doc_extractor_pydantic/static/index.html","utf8"); new vm.Script(h.match(/<script>([\s\S]*)<\/script>/)[1]); console.log("JS_OK")'
+node --check src/doc_extractor_pydantic/static/app.js
 ```
 
 O check de estrutura do harness é executado com:
@@ -17,11 +17,25 @@ O check de estrutura do harness é executado com:
 uv run python scripts/check_harness.py
 ```
 
+Os testes de navegador exigem o Chromium do Playwright uma única vez:
+
+```powershell
+uv run playwright install chromium
+```
+
+Sem ele, `tests/test_frontend_dom.py` falha em vez de passar em silêncio.
+
 ## Critérios de aceite
 
 - Upload inválido é rejeitado antes do provider.
-- PDF precisa ser legível e conter pelo menos uma página.
-- Saída inválida é removida e acompanhada de aviso.
+- Corpo acima do limite é recusado com 413 antes de o multipart ser processado.
+- PDF precisa ser legível e conter entre uma página e o limite de páginas.
+- O PDF é aberto uma única vez por requisição.
+- Nenhuma imagem é decodificada ou codificada em base64 antes do corte final.
+- Saída inválida é removida e acompanhada de aviso, inclusive quando o campo não
+  pertence ao tipo identificado.
+- Aviso do modelo sobre um campo que o tipo identificado não possui é descartado:
+  um RG não avisa sobre registro, categoria ou validade.
 - A interface não mistura resultados de arquivos diferentes.
 - Quando existirem imagens incorporadas, a frente principal aparece em detalhe
   ampliável e os demais blocos aparecem como miniaturas.
@@ -32,7 +46,13 @@ uv run python scripts/check_harness.py
 
 - Não existe teste automatizado de acurácia contra documentos reais.
 - Testes de provider são substituídos por agente falso e configuração local.
-- A validação de JavaScript é sintática; o fluxo visual completo requer teste
-  manual no navegador local.
+- A validação com `node` é apenas sintática. O comportamento é coberto por
+  `tests/test_frontend_dom.py`, que roda a página real em Chromium headless e
+  intercepta `/api/extract`: render de campos, avisos, cancelamento de
+  requisição, erro da API, viewport estreito e cópia.
+- `tests/test_frontend.py` continua verificando fragmentos do HTML. Serve como
+  rede de segurança barata, não como prova de comportamento.
+- Não há teste de aparência: cor, espaçamento e legibilidade continuam sendo
+  conferidos a olho no navegador local.
 - O foco automático em regiões específicas dos campos ainda não faz parte do
   visualizador atual.

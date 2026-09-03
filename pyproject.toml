@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
+    "httpx>=0.28,<1",
     "pydantic-ai-slim[google,openai]>=1.0,<2",
     "pypdf[image]>=5,<7",
     "python-multipart>=0.0.20,<1",
@@ -14,11 +15,12 @@ dependencies = [
 
 [project.scripts]
 doc-extractor = "doc_extractor_pydantic.main:run"
+dev = "doc_extractor_pydantic.dev:run"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28,<1",
     "pytest>=8,<9",
+    "pytest-playwright>=0.9.0",
     "ruff>=0.11,<1",
 ]
 

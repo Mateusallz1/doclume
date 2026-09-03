@@ -18,11 +18,31 @@ autorização adequada.
 - Nunca registrar conteúdo, campos extraídos, imagens, PDFs ou nomes de arquivo.
 - Responder com `Cache-Control: no-store` e headers de proteção para evitar cache
   ou interpretação indevida no navegador.
+- Manter CSS e JavaScript em arquivos próprios: a CSP não usa `'unsafe-inline'`
+  e define `frame-ancestors 'none'`. Não reintroduzir `<style>`, `<script>` ou
+  atributo `style` no HTML.
+- Servir apenas os arquivos estáticos declarados em `STATIC_ASSETS`, nunca um
+  caminho vindo da URL.
 - Fechar explicitamente o upload ao terminar a requisição para liberar qualquer
   spool temporário usado pelo parser multipart.
 - Usar `textContent` na interface para dados vindos do modelo.
 - Manter a revisão humana antes de qualquer uso operacional.
 - Usar apenas arquivos sintéticos nos testes automatizados.
+
+## Exposição do endpoint
+
+O piloto atende somente o computador local e não possui autenticação. Duas
+barreiras aplicam isso:
+
+- `HOST` fora de loopback aborta a inicialização em `Settings.from_env()`.
+- `LoopbackOnlyMiddleware` responde `403` quando o cliente não é loopback,
+  qualquer que seja o endereço em que o servidor foi colocado para escutar, e
+  também quando a requisição traz um `Origin` de outro host.
+- `ConcurrencyLimit` responde `429` acima de duas análises simultâneas, para que
+  um cliente local não consuma a chave do provedor em rajada.
+
+Antes de publicar em rede, isso não basta: é preciso autenticação, host
+permitido, rate limit por cliente e revisão do controle de concorrência.
 
 ## Revisão de mudança
 

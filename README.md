@@ -60,7 +60,7 @@ agente aplica `thinking_level=MINIMAL` para priorizar a velocidade na extração
 uv sync --dev
 Copy-Item .env.example .env
 # Edite .env e informe GEMINI_API_KEY
-uv run uvicorn doc_extractor_pydantic.main:app --env-file .env --host 127.0.0.1 --port 8788 --reload
+uv run dev
 ```
 
 Abra <http://127.0.0.1:8788>.
@@ -72,17 +72,23 @@ precisa aceitar o tipo de arquivo enviado, especialmente PDFs.
 ## Testes e checks
 
 ```powershell
+uv sync --dev
+uv run playwright install chromium
 uv run pytest
 uv run ruff check .
 uv run python scripts/check_harness.py
 ```
 
 Os testes não chamam nenhum modelo nem enviam documentos. O teste de integração
-do agente usa um agente falso para verificar o contrato multimodal.
+do agente usa um agente falso para verificar o contrato multimodal, e os testes
+de navegador servem a página real em loopback com `/api/extract` interceptado.
 
 ## Contrato da API
 
 - `GET /api/health`
 - `POST /api/extract` com o campo multipart `document`
 
-Extensões aceitas: `.pdf`, `.jpg`, `.jpeg` e `.png`. O limite padrão é 15 MB.
+Extensões aceitas: `.pdf`, `.jpg`, `.jpeg` e `.png`. O limite padrão é 15 MB e um
+PDF pode ter até 20 páginas. Um corpo acima do limite recebe `413` antes de o
+arquivo ser lido. Os demais limites de consumo estão em
+[docs/RELIABILITY.md](docs/RELIABILITY.md).

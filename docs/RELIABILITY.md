@@ -8,6 +8,32 @@
 - Entradas: PDF, JPG, JPEG e PNG até 15 MB.
 - Resultado: sempre sujeito à revisão humana.
 
+## Limites de consumo
+
+Os limites ficam em `limits.py` e são aplicados antes de qualquer trabalho caro
+sobre o documento.
+
+| Limite | Valor | Onde age |
+| --- | --- | --- |
+| Corpo da requisição | upload + 64 KB de envelope | Middleware ASGI, antes do parser multipart |
+| Tamanho do upload | `MAX_UPLOAD_BYTES` (15 MB) | `validate_upload` |
+| Páginas do PDF | 20 | `validate_upload` |
+| Páginas percorridas por prévia | 4 | Varredura de imagens incorporadas |
+| Candidatas a detalhe | 24 | Varredura de imagens incorporadas |
+| Pixels por imagem incorporada | 40 MP | Lido do `/Width` e `/Height` declarados |
+| Content stream por página | 8 MB descomprimidos | Antes de interpretar os operadores |
+| Detalhes retornados | 4 | Corte antes de decodificar e codificar em base64 |
+| Análises simultâneas | 2 | `/api/extract`, com `429` acima disso |
+| Tempo de resposta do provedor | 90 s | `asyncio.wait_for` na chamada do agente, com `504` |
+| Tentativas do agente | 1 adicional | Saída que não passa na validação |
+
+O PDF é aberto uma única vez por requisição: `validate_upload` devolve o
+`PdfReader` já validado e o restante do fluxo reaproveita esse objeto.
+
+A seleção dos detalhes usa apenas metadados declarados no PDF. Só as quatro
+imagens escolhidas são decodificadas e convertidas em base64; um XObject
+desenhado várias vezes na mesma página vira um único detalhe.
+
 ## Dependências críticas
 
 1. O servidor FastAPI precisa estar ativo.
@@ -17,10 +43,17 @@
 
 ## Falhas conhecidas
 
-- Provider indisponível, quota excedida ou timeout resulta em erro genérico HTTP
-  502 para o navegador.
-- O piloto não possui limite de páginas, rate limit ou fila de concorrência.
-- O retry do agente pode repetir uma chamada quando a saída não é válida.
+- Provider indisponível resulta em HTTP 503 após backoff curto; quota ou limite
+  resulta em HTTP 429. Falhas não transitórias continuam como erro genérico HTTP 502.
+  Provider lento resulta em HTTP 504 quando o tempo limite local estoura; a
+  chamada é cancelada, mas o custo já consumido no provedor não volta atrás.
+- O piloto não possui autenticação nem rate limit por cliente: acima de duas
+  análises simultâneas a resposta é `429`, sem fila e sem nova tentativa
+  automática. Ver [SECURITY.md](SECURITY.md).
+- Um único stream comprimido ainda pode ocupar até o teto do `pypdf` (75 MB) ao
+  ser descomprimido, antes de o limite de 8 MB por página descartá-lo.
+- O retry do agente ainda pode repetir uma chamada quando a saída não é válida,
+  agora uma única vez e dentro do mesmo tempo limite total.
 - A extração de imagens incorporadas é uma melhoria de prévia; se falhar, o PDF
   não impede a análise, e a interface informa que não há detalhe ampliado.
 - A camada gratuita do provider pode apresentar variação de latência e políticas

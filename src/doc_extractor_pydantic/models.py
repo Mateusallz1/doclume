@@ -9,6 +9,47 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 DocumentKind = Literal["cnh", "rg", "unknown"]
 FieldConfidence = Literal["high", "medium", "low"]
 
+EXPECTED_FIELDS: dict[str, tuple[str, ...]] = {
+    "cnh": (
+        "name",
+        "cpf",
+        "birth_date",
+        "issue_date",
+        "validity",
+        "registration",
+        "category",
+        "parentage",
+    ),
+    "rg": ("name", "cpf", "birth_date", "issue_date", "birth_place", "parentage"),
+    "unknown": ("name", "cpf", "birth_date"),
+}
+"""Campos que fazem sentido cobrar de cada tipo de documento."""
+
+FIELD_TERMS: dict[str, tuple[str, ...]] = {
+    "registration": ("registro",),
+    "category": ("categoria", "cat hab", "habilitação"),
+    "validity": ("validade",),
+    "nationality": ("nacionalidade",),
+    "birth_place": ("local de nascimento", "naturalidade"),
+    "parentage": ("filiação",),
+}
+"""Como o modelo costuma se referir a cada campo ao escrever um aviso."""
+
+
+def warning_applies(warning: str, kind: str) -> bool:
+    """Whether a model-written warning is about a field this document even has."""
+
+    expected = EXPECTED_FIELDS.get(kind)
+    if expected is None or kind == "unknown":
+        return True
+    lowered = warning.casefold()
+    if kind == "rg" and any(term in lowered for term in ("registro geral", "registro civil")):
+        return True
+    return not any(
+        field not in expected and any(term in lowered for term in terms)
+        for field, terms in FIELD_TERMS.items()
+    )
+
 
 def _cpf_is_valid(value: str) -> bool:
     if not re.fullmatch(r"\s*\d{3}[ .-]?\d{3}[ .-]?\d{3}[ .-]?\d{2}\s*", value):
@@ -32,6 +73,8 @@ def _br_date(value: str) -> date | None:
     if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", value.strip()):
         return None
     day, month, year = (int(part) for part in value.split("/"))
+    if year < 1900:
+        return None
     try:
         return date(year, month, day)
     except ValueError:
@@ -131,9 +174,18 @@ class DocumentFields(BaseModel):
             else:
                 parsed_dates[attribute] = parsed
 
+        today = date.today()
         birth_date = parsed_dates.get("birth_date")
         issue_date = parsed_dates.get("issue_date")
         validity = parsed_dates.get("validity")
+        if birth_date and birth_date > today:
+            self.birth_date = None
+            birth_date = None
+            issues.append("A data de nascimento não pode ser no futuro.")
+        if issue_date and issue_date > today:
+            self.issue_date = None
+            issue_date = None
+            issues.append("A data de emissão não pode ser no futuro.")
         if birth_date and issue_date and birth_date >= issue_date:
             self.birth_date = None
             self.issue_date = None
@@ -142,6 +194,10 @@ class DocumentFields(BaseModel):
             self.issue_date = None
             self.validity = None
             issues.append("As datas de emissão e validade são incompatíveis.")
+        if birth_date and validity and validity <= birth_date:
+            self.birth_date = None
+            self.validity = None
+            issues.append("As datas de nascimento e validade são incompatíveis.")
         return issues
 
     def populated(self) -> dict[str, ExtractedField]:
@@ -178,6 +234,10 @@ class DocumentExtraction(BaseModel):
 
     @model_validator(mode="after")
     def validate_extracted_fields(self) -> DocumentExtraction:
+        # Drop the model's noise first: an invalid value removed below still warns.
+        self.warnings = [
+            warning for warning in self.warnings if warning_applies(warning, self.kind)
+        ]
         for issue in self.fields.sanitize():
             if issue not in self.warnings:
                 self.warnings.append(issue)

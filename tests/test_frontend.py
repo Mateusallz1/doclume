@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-INDEX_HTML = (
-    Path(__file__).parents[1]
-    / "src"
-    / "doc_extractor_pydantic"
-    / "static"
-    / "index.html"
-).read_text(encoding="utf-8")
+STATIC = Path(__file__).parents[1] / "src" / "doc_extractor_pydantic" / "static"
+MARKUP = (STATIC / "index.html").read_text(encoding="utf-8")
+STYLES = (STATIC / "app.css").read_text(encoding="utf-8")
+SCRIPT = (STATIC / "app.js").read_text(encoding="utf-8")
+# The page is split into three files so the CSP can drop 'unsafe-inline'.
+INDEX_HTML = MARKUP + STYLES + SCRIPT
+
+
+def test_the_page_carries_no_inline_style_or_script() -> None:
+    assert "<style" not in MARKUP
+    assert "<script>" not in MARKUP
+    assert 'href="/static/app.css"' in MARKUP
+    assert 'src="/static/app.js"' in MARKUP
+    assert "style=" not in MARKUP
 
 
 def test_extracted_fields_are_display_only_and_have_copy_icon() -> None:
@@ -44,6 +51,46 @@ def test_selecting_a_new_file_clears_previous_result() -> None:
     assert 'result.classList.add("hidden");' in change_handler
     assert "fields.replaceChildren();" in change_handler
     assert 'rawText.textContent = "";' in change_handler
+
+
+def test_low_and_medium_confidence_reach_the_user() -> None:
+    assert 'confidenceLabels = { medium: "conferir", low: "conferir com atenção" }' in INDEX_HTML
+    assert 'badge.className = "field-confidence"' in INDEX_HTML
+    assert 'badge.dataset.confidence = value.confidence;' in INDEX_HTML
+    assert '.field-confidence[data-confidence="medium"]' in INDEX_HTML
+    assert '.field-confidence[data-confidence="low"]' in INDEX_HTML
+    # High confidence stays quiet, so the badge only marks what needs a check.
+    assert "confidenceLabels[value.confidence]" in INDEX_HTML
+
+
+def test_expected_fields_stay_visible_when_not_identified() -> None:
+    assert "Array.isArray(data.missing) ? data.missing : []" in INDEX_HTML
+    assert 'card.dataset.found = value.value ? "true" : "false";' in INDEX_HTML
+    assert '.field-card[data-found="false"] .field-value' in INDEX_HTML
+    assert 'Não identificado' in INDEX_HTML
+
+
+def test_copying_all_data_skips_the_fields_that_were_not_found() -> None:
+    assert "fields.querySelectorAll('.field-card[data-found=\"true\"]')" in INDEX_HTML
+
+
+def test_selecting_a_new_file_cancels_the_running_analysis() -> None:
+    change_handler = INDEX_HTML.split('input.addEventListener("change"', maxsplit=1)[1]
+    change_handler = change_handler.split('form.addEventListener("submit"', maxsplit=1)[0]
+    assert "requestId += 1;" in change_handler
+    assert "if (pendingRequest) pendingRequest.abort();" in change_handler
+
+
+def test_late_response_cannot_overwrite_the_current_file() -> None:
+    submit_handler = INDEX_HTML.split('form.addEventListener("submit"', maxsplit=1)[1]
+    submit_handler = submit_handler.split("function renderResult", maxsplit=1)[0]
+    assert "const controller = new AbortController();" in submit_handler
+    assert "signal: controller.signal" in submit_handler
+    assert "const currentRequest = requestId;" in submit_handler
+    # Guards before rendering, before showing an error and before re-enabling.
+    assert submit_handler.count("currentRequest !== requestId") == 2
+    assert "if (currentRequest === requestId) {" in submit_handler
+    assert 'error.name === "AbortError"' in submit_handler
 
 
 def test_copy_failure_has_a_friendly_message() -> None:

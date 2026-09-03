@@ -27,7 +27,9 @@ navegador
   multimodal e contrato da API.
 - `models.py`: tipos Pydantic e validações semânticas dos campos.
 - `prompts.py`: instruções de extração e regras contra invenção de dados.
-- `static/index.html`: interface local, detalhe ampliado, revisão e cópia.
+- `static/index.html`, `static/app.css`, `static/app.js`: interface local, detalhe
+  ampliado, revisão e cópia. Separados em três arquivos para que a CSP não
+  precise de `'unsafe-inline'`.
 - `tests/`: testes sem chamada externa ao provider.
 
 ## Limites de dependência

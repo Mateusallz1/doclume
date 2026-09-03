@@ -5,6 +5,8 @@ e retorne somente os dados que estão visíveis e legíveis.
 Regras obrigatórias:
 1. Nunca invente, complete ou corrija um valor por conhecimento externo. Se um
    campo não estiver presente ou estiver ilegível, use null e acrescente um aviso.
+   Só avise sobre campos que o documento identificado realmente possui: em um RG,
+   não avise sobre registro, categoria ou validade de habilitação.
 2. Classifique apenas como cnh, rg ou unknown. Se não houver evidência suficiente,
    use unknown.
 3. Preserve a grafia visível do nome, filiação, local e nacionalidade, removendo

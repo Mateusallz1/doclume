@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass
 
 DEFAULT_MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 DEFAULT_MODEL = "google:gemini-3.5-flash-lite"
+
+
+def is_loopback(host: str | None) -> bool:
+    """Whether an address or hostname points back at this machine."""
+
+    if not host:
+        return False
+    candidate = host.strip().strip("[]")
+    if candidate.lower() in {"localhost", "testserver"}:
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,9 +31,15 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        host = os.getenv("HOST", "127.0.0.1")
+        if not is_loopback(host):
+            raise ValueError(
+                f"HOST={host!r} não é loopback. Este piloto só atende 127.0.0.1 ou ::1; "
+                "publicar em rede exige autenticação, rate limit e host permitido."
+            )
         return cls(
             model=os.getenv("PYDANTIC_AI_MODEL", DEFAULT_MODEL),
-            host=os.getenv("HOST", "127.0.0.1"),
+            host=host,
             port=_positive_int(os.getenv("PORT"), 8788),
             max_upload_bytes=_positive_int(
                 os.getenv("MAX_UPLOAD_BYTES"), DEFAULT_MAX_UPLOAD_BYTES
