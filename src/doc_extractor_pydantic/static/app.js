@@ -111,6 +111,106 @@ input.addEventListener("change", () => {
   if (isImage) imagePreview.src = previewUrl;
 });
 
+let zoomScale = 1;
+let panX = 0;
+let panY = 0;
+let isPanning = false;
+let startX = 0;
+let startY = 0;
+let pinchDist = 0;
+
+function updateZoomTransform() {
+  focusImage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+}
+
+function resetZoom() {
+  zoomScale = 1;
+  panX = 0;
+  panY = 0;
+  updateZoomTransform();
+}
+
+const zoomInBtn = document.querySelector("#zoom-in");
+const zoomOutBtn = document.querySelector("#zoom-out");
+const zoomResetBtn = document.querySelector("#zoom-reset");
+
+if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
+  zoomScale = Math.min(5, Math.round(zoomScale * 1.25 * 100) / 100);
+  updateZoomTransform();
+});
+if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
+  zoomScale = Math.max(0.5, Math.round((zoomScale / 1.25) * 100) / 100);
+  updateZoomTransform();
+});
+if (zoomResetBtn) zoomResetBtn.addEventListener("click", resetZoom);
+
+focusImageContainer.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 1.15 : 0.85;
+  zoomScale = Math.min(5, Math.max(0.5, Math.round(zoomScale * delta * 100) / 100));
+  updateZoomTransform();
+}, { passive: false });
+
+focusImageContainer.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  isPanning = true;
+  startX = e.clientX - panX;
+  startY = e.clientY - panY;
+  focusImageContainer.classList.add("panning");
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!isPanning) return;
+  panX = e.clientX - startX;
+  panY = e.clientY - startY;
+  updateZoomTransform();
+});
+
+window.addEventListener("mouseup", () => {
+  if (isPanning) {
+    isPanning = false;
+    focusImageContainer.classList.remove("panning");
+  }
+});
+
+focusImageContainer.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 1) {
+    isPanning = true;
+    startX = e.touches[0].clientX - panX;
+    startY = e.touches[0].clientY - panY;
+  } else if (e.touches.length === 2) {
+    isPanning = false;
+    pinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+
+focusImageContainer.addEventListener("touchmove", (e) => {
+  if (e.touches.length === 1 && isPanning) {
+    panX = e.touches[0].clientX - startX;
+    panY = e.touches[0].clientY - startY;
+    updateZoomTransform();
+  } else if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (pinchDist > 0) {
+      const factor = dist / pinchDist;
+      zoomScale = Math.min(5, Math.max(0.5, zoomScale * factor));
+      updateZoomTransform();
+    }
+    pinchDist = dist;
+  }
+}, { passive: true });
+
+focusImageContainer.addEventListener("touchend", () => {
+  isPanning = false;
+  pinchDist = 0;
+});
+
 function renderFocusPreview() {
   const preview = focusState.previews[focusState.index];
   if (!preview) return;
@@ -119,6 +219,7 @@ function renderFocusPreview() {
     focusImage.src = preview.src;
   }
   fitFocusImage(preview);
+  resetZoom();
   [...focusThumbnails.children].forEach((thumbnail, index) => {
     thumbnail.classList.toggle("selected", index === focusState.index);
   });
@@ -218,8 +319,14 @@ function renderFieldCard(key, value) {
   }
   const fieldValue = document.createElement("span");
   fieldValue.className = "field-value";
+  fieldValue.contentEditable = "plaintext-only";
+  fieldValue.tabIndex = 0;
+  fieldValue.setAttribute("role", "textbox");
+  fieldValue.setAttribute("aria-label", value.label);
   fieldValue.textContent = value.value || "Não identificado";
-  const control = document.createElement("div"); control.className = "field-control";
+
+  const control = document.createElement("div");
+  control.className = "field-control";
   const copyButton = document.createElement("button");
   copyButton.type = "button";
   copyButton.className = "secondary field-copy";
@@ -227,10 +334,36 @@ function renderFieldCard(key, value) {
   copyButton.setAttribute("aria-label", `Copiar ${value.label}`);
   copyButton.innerHTML = '<svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>';
   copyButton.disabled = !value.value;
-  copyButton.addEventListener("click", async () => {
-    if (await copyText(value.value || "")) status.textContent = `${value.label} copiado.`;
+
+  fieldValue.addEventListener("focus", () => {
+    if (card.dataset.found === "false") {
+      fieldValue.textContent = "";
+    }
   });
-  control.append(fieldValue, copyButton); card.append(name, control); return card;
+
+  fieldValue.addEventListener("blur", () => {
+    const text = fieldValue.textContent.trim();
+    if (!text) {
+      fieldValue.textContent = "Não identificado";
+      card.dataset.found = "false";
+      copyButton.disabled = true;
+    }
+  });
+
+  fieldValue.addEventListener("input", () => {
+    const text = fieldValue.textContent.trim();
+    const isIdentified = Boolean(text && text !== "Não identificado");
+    card.dataset.found = isIdentified ? "true" : "false";
+    copyButton.disabled = !isIdentified;
+  });
+
+  copyButton.addEventListener("click", async () => {
+    const text = fieldValue.textContent.trim();
+    if (await copyText(text)) status.textContent = `${value.label} copiado.`;
+  });
+  control.append(fieldValue, copyButton);
+  card.append(name, control);
+  return card;
 }
 
 function renderResult(data) {

@@ -200,3 +200,74 @@ def test_copying_all_data_skips_the_fields_that_were_not_found(page_at_home: Pag
     assert "Nome: MARIA DE TESTE" in copied
     assert "Não identificado" not in copied
     assert "Validade" not in copied
+
+
+def test_manual_editing_updates_copy_content(page_at_home: Page) -> None:
+    page = page_at_home
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    answer(page)
+    upload(page)
+    analyze(page)
+
+    name_field = page.locator('[data-field-label="name"] .field-value')
+    name_field.fill("MARIA SILVA REVISADA")
+    page.click("#copy")
+    page.wait_for_timeout(200)
+    copied = page.evaluate("navigator.clipboard.readText()")
+
+    assert "Nome: MARIA SILVA REVISADA" in copied
+
+
+def test_manual_filling_missing_field_enables_copy(page_at_home: Page) -> None:
+    page = page_at_home
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    answer(page)
+    upload(page)
+    analyze(page)
+
+    validity_card = page.locator('[data-field-label="validity"]')
+    validity_field = validity_card.locator(".field-value")
+    validity_copy = validity_card.locator(".field-copy")
+
+    assert validity_card.get_attribute("data-found") == "false"
+    assert validity_copy.is_disabled()
+
+    validity_field.focus()
+    validity_field.type("15/12/2030")
+
+    assert validity_card.get_attribute("data-found") == "true"
+    assert not validity_copy.is_disabled()
+
+    page.click("#copy")
+    page.wait_for_timeout(200)
+    copied = page.evaluate("navigator.clipboard.readText()")
+
+    assert "Validade: 15/12/2030" in copied
+
+
+def test_zoom_buttons_adjust_focus_image_transform(page_at_home: Page) -> None:
+    page = page_at_home
+    body_with_preview = dict(RESULT)
+    tiny_png = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    body_with_preview["previews"] = [
+        {
+            "label": "Frente",
+            "primary": True,
+            "src": tiny_png,
+        }
+    ]
+    answer(page, body=body_with_preview)
+    upload(page, name="doc.pdf")
+    analyze(page)
+
+    focus_image = page.locator("#focus-image")
+    page.click("#zoom-in")
+    transform_after_zoom = focus_image.evaluate("el => el.style.transform")
+    assert "scale(1.25)" in transform_after_zoom
+
+    page.click("#zoom-reset")
+    transform_after_reset = focus_image.evaluate("el => el.style.transform")
+    assert "scale(1)" in transform_after_reset
