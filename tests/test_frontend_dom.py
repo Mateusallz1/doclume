@@ -271,3 +271,23 @@ def test_zoom_buttons_adjust_focus_image_transform(page_at_home: Page) -> None:
     page.click("#zoom-reset")
     transform_after_reset = focus_image.evaluate("el => el.style.transform")
     assert "scale(1)" in transform_after_reset
+
+
+def test_preview_panel_has_no_inner_scrollbar(page_at_home: Page) -> None:
+    page = page_at_home
+    body_with_preview = dict(RESULT)
+    tiny_png = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    body_with_preview["previews"] = [
+        {"label": "Frente", "primary": True, "src": tiny_png}
+    ]
+    answer(page, body=body_with_preview)
+    upload(page, name="doc.pdf")
+    analyze(page)
+
+    panel = page.locator("#preview-panel")
+    scroll_height = panel.evaluate("el => el.scrollHeight")
+    client_height = panel.evaluate("el => el.clientHeight")
+    assert scroll_height <= client_height
