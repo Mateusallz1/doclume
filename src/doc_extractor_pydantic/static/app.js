@@ -111,27 +111,44 @@ input.addEventListener("change", () => {
   if (isImage) imagePreview.src = previewUrl;
 });
 
+window.addEventListener("paste", (e) => {
+  const clipboardFiles = e.clipboardData?.files;
+  if (!clipboardFiles || !clipboardFiles.length) return;
+  const file = [...clipboardFiles].find(
+    (f) => f.type.startsWith("image/") || f.type === "application/pdf"
+  );
+  if (!file) return;
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  status.textContent = `Arquivo colado: ${file.name || "imagem da área de transferência"}.`;
+});
+
 let zoomScale = 1;
 let panX = 0;
 let panY = 0;
+let rotationDeg = 0;
 let isPanning = false;
 let startX = 0;
 let startY = 0;
 let pinchDist = 0;
 
 function updateZoomTransform() {
-  focusImage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+  focusImage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale}) rotate(${rotationDeg}deg)`;
 }
 
 function resetZoom() {
   zoomScale = 1;
   panX = 0;
   panY = 0;
+  rotationDeg = 0;
   updateZoomTransform();
 }
 
 const zoomInBtn = document.querySelector("#zoom-in");
 const zoomOutBtn = document.querySelector("#zoom-out");
+const zoomRotateBtn = document.querySelector("#zoom-rotate");
 const zoomResetBtn = document.querySelector("#zoom-reset");
 
 if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
@@ -140,6 +157,10 @@ if (zoomInBtn) zoomInBtn.addEventListener("click", () => {
 });
 if (zoomOutBtn) zoomOutBtn.addEventListener("click", () => {
   zoomScale = Math.max(0.5, Math.round((zoomScale / 1.25) * 100) / 100);
+  updateZoomTransform();
+});
+if (zoomRotateBtn) zoomRotateBtn.addEventListener("click", () => {
+  rotationDeg = (rotationDeg + 90) % 360;
   updateZoomTransform();
 });
 if (zoomResetBtn) zoomResetBtn.addEventListener("click", resetZoom);
@@ -298,6 +319,46 @@ const confidenceHints = {
   low: "O modelo leu este dado parcialmente. Compare com o documento.",
 };
 
+function isValidCpf(str) {
+  const digits = (str || "").replace(/\D/g, "");
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(digits[i], 10) * (10 - i);
+  let rem = (sum * 10) % 11;
+  if (rem === 10) rem = 0;
+  if (rem !== parseInt(digits[9], 10)) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(digits[i], 10) * (11 - i);
+  rem = (sum * 10) % 11;
+  if (rem === 10) rem = 0;
+  return rem === parseInt(digits[10], 10);
+}
+
+function isValidDate(str) {
+  const match = (str || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const year = parseInt(match[3], 10);
+  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+}
+
+function checkFieldValidity(key, text) {
+  if (!text || text === "Não identificado") return true;
+  if (key === "cpf") {
+    const digits = text.replace(/\D/g, "");
+    if (digits.length === 11) return isValidCpf(digits);
+    return true;
+  }
+  if (key === "birthDate" || key === "issueDate" || key === "validity") {
+    if (text.trim().length >= 10) return isValidDate(text);
+    return true;
+  }
+  return true;
+}
+
 function renderFieldCard(key, value) {
   const card = document.createElement("div");
   card.className = "field-card";
@@ -324,6 +385,9 @@ function renderFieldCard(key, value) {
   fieldValue.setAttribute("role", "textbox");
   fieldValue.setAttribute("aria-label", value.label);
   fieldValue.textContent = value.value || "Não identificado";
+  if (value.value && !checkFieldValidity(key, value.value)) {
+    fieldValue.classList.add("field-invalid");
+  }
 
   const control = document.createElement("div");
   control.className = "field-control";
@@ -338,6 +402,7 @@ function renderFieldCard(key, value) {
   fieldValue.addEventListener("focus", () => {
     if (card.dataset.found === "false") {
       fieldValue.textContent = "";
+      fieldValue.classList.remove("field-invalid");
     }
   });
 
@@ -347,6 +412,9 @@ function renderFieldCard(key, value) {
       fieldValue.textContent = "Não identificado";
       card.dataset.found = "false";
       copyButton.disabled = true;
+      fieldValue.classList.remove("field-invalid");
+    } else {
+      fieldValue.classList.toggle("field-invalid", !checkFieldValidity(key, text));
     }
   });
 
@@ -355,6 +423,7 @@ function renderFieldCard(key, value) {
     const isIdentified = Boolean(text && text !== "Não identificado");
     card.dataset.found = isIdentified ? "true" : "false";
     copyButton.disabled = !isIdentified;
+    fieldValue.classList.toggle("field-invalid", !checkFieldValidity(key, text));
   });
 
   copyButton.addEventListener("click", async () => {
@@ -407,6 +476,29 @@ async function copyText(value) {
   }
 }
 
+const CORE_FIELD_KEYS = ["name", "cpf", "birthDate", "registration"];
+
+document.querySelector("#copy-core")?.addEventListener("click", async () => {
+  if (!lastData) return;
+  const values = [];
+  for (const key of CORE_FIELD_KEYS) {
+    const card = fields.querySelector(`.field-card[data-field-label="${key}"][data-found="true"]`);
+    if (card) {
+      const val = card.querySelector(".field-value")?.textContent?.trim();
+      if (val && val !== "Não identificado") {
+        values.push(val);
+      }
+    }
+  }
+  if (!values.length) {
+    status.textContent = "Nenhum dado essencial encontrado para copiar.";
+    return;
+  }
+  if (await copyText(values.join("\n"))) {
+    status.textContent = "Dados essenciais copiados (apenas valores).";
+  }
+});
+
 document.querySelector("#copy").addEventListener("click", async () => {
   if (!lastData) return;
   const values = [...fields.querySelectorAll('.field-card[data-found="true"]')].map((field) => `${field.querySelector(".field-name span").textContent}: ${field.querySelector(".field-value").textContent}`);
@@ -414,4 +506,52 @@ document.querySelector("#copy").addEventListener("click", async () => {
 });
 document.querySelector("#copy-text").addEventListener("click", async () => {
   if (await copyText(rawText.textContent)) status.textContent = "Texto do documento copiado.";
+});
+
+function getExtractedItems() {
+  const items = [];
+  for (const card of fields.querySelectorAll('.field-card[data-found="true"]')) {
+    const label = card.querySelector(".field-name span")?.textContent || "";
+    const val = card.querySelector(".field-value")?.textContent?.trim() || "";
+    if (val && val !== "Não identificado") {
+      items.push({ label, value: val, key: card.dataset.fieldLabel || "" });
+    }
+  }
+  return items;
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.querySelector("#download-json")?.addEventListener("click", () => {
+  if (!lastData) return;
+  const items = getExtractedItems();
+  const obj = {
+    documento: lastData.kind || "documento",
+    dados: Object.fromEntries(items.map((it) => [it.label, it.value])),
+  };
+  downloadFile(JSON.stringify(obj, null, 2), `extracao-${lastData.kind || "documento"}.json`, "application/json");
+  status.textContent = "Arquivo JSON baixado.";
+});
+
+document.querySelector("#download-csv")?.addEventListener("click", () => {
+  if (!lastData) return;
+  const items = getExtractedItems();
+  const lines = [["Campo", "Valor"]];
+  for (const it of items) {
+    const escapedVal = `"${it.value.replace(/"/g, '""')}"`;
+    lines.push([`"${it.label.replace(/"/g, '""')}"`, escapedVal]);
+  }
+  const csvText = "\uFEFF" + lines.map((r) => r.join(";")).join("\r\n");
+  downloadFile(csvText, `extracao-${lastData.kind || "documento"}.csv`, "text/csv;charset=utf-8;");
+  status.textContent = "Arquivo CSV baixado.";
 });

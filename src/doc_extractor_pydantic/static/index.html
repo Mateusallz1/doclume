@@ -31,6 +31,7 @@
               <div class="focus-toolbar-group">
                 <button id="zoom-in" class="secondary zoom-btn" type="button" title="Aumentar zoom" aria-label="Aumentar zoom">+</button>
                 <button id="zoom-out" class="secondary zoom-btn" type="button" title="Diminuir zoom" aria-label="Diminuir zoom">−</button>
+                <button id="zoom-rotate" class="secondary zoom-btn" type="button" title="Girar 90°" aria-label="Girar 90°">↻</button>
                 <button id="zoom-reset" class="secondary zoom-btn" type="button" title="Ajustar ao espaço" aria-label="Ajustar zoom">100%</button>
               </div>
             </div>
@@ -50,7 +51,10 @@
           <h2>Informações encontradas</h2>
           <div id="fields" class="fields"></div>
           <div class="actions">
-            <button id="copy" type="button">Copiar informações</button>
+            <button id="copy-core" type="button" title="Copiar apenas os valores de Nome, CPF, Data de Nascimento e Registro">Copiar essenciais</button>
+            <button id="copy" class="secondary" type="button" title="Copiar todos os campos com identificadores">Copiar tudo</button>
+            <button id="download-json" class="secondary" type="button" title="Baixar dados em formato JSON">Baixar JSON</button>
+            <button id="download-csv" class="secondary" type="button" title="Baixar dados em formato CSV">Baixar CSV</button>
             <button id="copy-text" class="secondary" type="button">Copiar texto do documento</button>
           </div>
           <details class="raw-details">

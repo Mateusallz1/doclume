@@ -291,3 +291,86 @@ def test_preview_panel_has_no_inner_scrollbar(page_at_home: Page) -> None:
     scroll_height = panel.evaluate("el => el.scrollHeight")
     client_height = panel.evaluate("el => el.clientHeight")
     assert scroll_height <= client_height
+
+
+def test_pasting_image_from_clipboard_populates_input(page_at_home: Page) -> None:
+    page = page_at_home
+    page.evaluate(
+        """() => {
+            const dt = new DataTransfer();
+            const file = new File(["fake"], "print.png", { type: "image/png" });
+            dt.items.add(file);
+            window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt }));
+        }"""
+    )
+    assert not page.locator("#submit").is_disabled()
+    assert "print.png" in page.locator("#status").inner_text()
+
+
+def test_zoom_rotate_rotates_focus_image(page_at_home: Page) -> None:
+    page = page_at_home
+    body_with_preview = dict(RESULT)
+    tiny_png = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    body_with_preview["previews"] = [
+        {"label": "Frente", "primary": True, "src": tiny_png}
+    ]
+    answer(page, body=body_with_preview)
+    upload(page, name="doc.pdf")
+    analyze(page)
+
+    focus_image = page.locator("#focus-image")
+    page.click("#zoom-rotate")
+    transform = focus_image.evaluate("el => el.style.transform")
+    assert "rotate(90deg)" in transform
+
+
+def test_field_dynamic_validation_flags_invalid_values(page_at_home: Page) -> None:
+    page = page_at_home
+    answer(page)
+    upload(page)
+    analyze(page)
+
+    cpf_field = page.locator('[data-field-label="cpf"] .field-value')
+    cpf_field.fill("111.111.111-11")
+    assert "field-invalid" in (cpf_field.get_attribute("class") or "")
+
+    cpf_field.fill("123.456.789-09")
+    assert "field-invalid" not in (cpf_field.get_attribute("class") or "")
+
+
+def test_download_json_and_csv_trigger_downloads(page_at_home: Page) -> None:
+    page = page_at_home
+    answer(page)
+    upload(page)
+    analyze(page)
+
+    with page.expect_download() as download_info:
+        page.click("#download-json")
+    download = download_info.value
+    assert download.suggested_filename.endswith(".json")
+
+    with page.expect_download() as download_info:
+        page.click("#download-csv")
+    download = download_info.value
+    assert download.suggested_filename.endswith(".csv")
+
+
+def test_copy_core_copies_only_values_without_labels(page_at_home: Page) -> None:
+    page = page_at_home
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    answer(page)
+    upload(page)
+    analyze(page)
+
+    page.click("#copy-core")
+    page.wait_for_timeout(200)
+    copied = page.evaluate("navigator.clipboard.readText()")
+
+    assert "MARIA DE TESTE" in copied
+    assert "123.456.789-09" in copied
+    assert "10/02/1990" in copied
+    assert "Nome:" not in copied
+    assert "CPF:" not in copied
