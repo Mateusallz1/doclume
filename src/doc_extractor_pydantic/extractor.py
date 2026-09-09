@@ -187,7 +187,11 @@ def validate_upload(
             raise UploadValidationError("O arquivo não parece ser um PDF válido.")
         try:
             document = PdfReader(BytesIO(content))
+            if document.is_encrypted:
+                raise UploadValidationError("PDF protegido por senha não é suportado.")
             pages = len(document.pages)
+        except UploadValidationError:
+            raise
         except Exception as error:
             raise UploadValidationError("O arquivo não parece ser um PDF válido.") from error
         if pages < 1:
