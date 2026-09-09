@@ -126,6 +126,18 @@ def test_rejects_a_pdf_with_more_pages_than_the_local_limit() -> None:
         validate_upload("doc.pdf", oversized, len(oversized))
 
 
+def test_validation_rejects_password_protected_pdf() -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.encrypt("secret-password")
+    stream = BytesIO()
+    writer.write(stream)
+    encrypted_pdf = stream.getvalue()
+
+    with pytest.raises(UploadValidationError, match="protegido por senha"):
+        validate_upload("protected.pdf", encrypted_pdf, len(encrypted_pdf) + 1024)
+
+
 def test_extraction_parses_the_pdf_only_once(monkeypatch) -> None:
     readers = []
     original_reader = extractor_module.PdfReader
