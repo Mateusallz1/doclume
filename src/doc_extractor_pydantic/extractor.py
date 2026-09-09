@@ -35,6 +35,7 @@ IMAGE_MEDIA_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
+    ".webp": "image/webp",
 }
 ALLOWED_EXTENSIONS = {".pdf", *IMAGE_MEDIA_TYPES}
 IDENTITY_MATRIX = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
@@ -176,7 +177,7 @@ def validate_upload(
 
     extension = PurePath(file_name).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
-        raise UploadValidationError("Formato não suportado. Use PDF, JPG, JPEG ou PNG.")
+        raise UploadValidationError("Formato não suportado. Use PDF, JPG, JPEG, PNG ou WEBP.")
     if not content:
         raise UploadValidationError("O arquivo está vazio.")
     if len(content) > max_upload_bytes:
@@ -205,6 +206,10 @@ def validate_upload(
         raise UploadValidationError("O arquivo não parece ser um PNG válido.")
     if extension in {".jpg", ".jpeg"} and not content.startswith(b"\xff\xd8\xff"):
         raise UploadValidationError("O arquivo não parece ser uma imagem JPEG válida.")
+    if extension == ".webp" and not (
+        content.startswith(b"RIFF") and len(content) >= 12 and content[8:12] == b"WEBP"
+    ):
+        raise UploadValidationError("O arquivo não parece ser uma imagem WebP válida.")
     return None
 
 
