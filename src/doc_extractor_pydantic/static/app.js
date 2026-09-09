@@ -105,7 +105,7 @@ input.addEventListener("change", () => {
   focusImage.removeAttribute("src");
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = URL.createObjectURL(file);
-  const isImage = file.type.startsWith("image/") || /\.(jpe?g|png)$/i.test(file.name);
+  const isImage = file.type.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(file.name);
   selectedIsPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
   imagePreview.classList.toggle("hidden", !isImage);
   if (isImage) imagePreview.src = previewUrl;

@@ -54,7 +54,15 @@ def make_image_pdf(pages: int = 1, size: tuple[int, int] = (420, 300)) -> bytes:
     return stream.getvalue()
 
 
+def make_webp(size: tuple[int, int] = (10, 10)) -> bytes:
+    img = Image.new("RGB", size, (255, 0, 0))
+    stream = BytesIO()
+    img.save(stream, format="WEBP")
+    return stream.getvalue()
+
+
 PDF = make_pdf()
+WEBP = make_webp()
 INVALID_PDF = b"%PDF-1.7\nnot-a-complete-pdf"
 
 
@@ -93,12 +101,15 @@ def test_google_agent_uses_minimal_thinking_without_a_network_call(monkeypatch) 
 def test_validates_supported_uploads_and_signatures() -> None:
     validate_upload("document.png", PNG, 1024)
     validate_upload("document.jpg", JPEG, 1024)
+    validate_upload("document.webp", WEBP, 1024)
     validate_upload("document.pdf", PDF, 1024)
 
     with pytest.raises(UploadValidationError, match="Formato não suportado"):
         validate_upload("document.exe", b"x", 1024)
     with pytest.raises(UploadValidationError, match="PNG válido"):
         validate_upload("document.png", b"x", 1024)
+    with pytest.raises(UploadValidationError, match="WebP válida"):
+        validate_upload("document.webp", b"x", 1024)
     with pytest.raises(UploadValidationError, match="PDF válido"):
         validate_upload("document.pdf", INVALID_PDF, 1024)
     with pytest.raises(UploadValidationError, match="excede"):
@@ -108,6 +119,7 @@ def test_validates_supported_uploads_and_signatures() -> None:
 def test_infers_media_type_from_extension() -> None:
     assert media_type_for("doc.png", "application/octet-stream") == "image/png"
     assert media_type_for("doc.jpeg") == "image/jpeg"
+    assert media_type_for("doc.webp") == "image/webp"
     assert media_type_for("doc.pdf") == "application/pdf"
 
 
