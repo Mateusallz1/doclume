@@ -485,3 +485,28 @@ def test_rg_keeps_warning_about_registro_geral() -> None:
         warnings=["O registro geral está parcialmente ilegível."],
     )
     assert extraction.warnings == ["O registro geral está parcialmente ilegível."]
+
+
+def test_rg_accepts_check_digit_x() -> None:
+    extraction_upper = DocumentExtraction(
+        kind="rg",
+        fields={"registration": {"value": "12.345.678-X", "confidence": "high"}},
+    )
+    assert extraction_upper.fields.registration is not None
+    assert extraction_upper.fields.registration.value == "12.345.678-X"
+
+    extraction_lower = DocumentExtraction(
+        kind="rg",
+        fields={"registration": {"value": "12.345.678-x", "confidence": "high"}},
+    )
+    assert extraction_lower.fields.registration is not None
+    assert extraction_lower.fields.registration.value == "12.345.678-x"
+
+
+def test_rg_rejects_x_in_middle_or_invalid_letters() -> None:
+    extraction = DocumentExtraction(
+        kind="rg",
+        fields={"registration": {"value": "12X345678", "confidence": "high"}},
+    )
+    assert extraction.fields.registration is None
+    assert any("registro" in w for w in extraction.warnings)
