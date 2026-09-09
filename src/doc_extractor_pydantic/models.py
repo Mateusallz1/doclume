@@ -82,10 +82,11 @@ def _br_date(value: str) -> date | None:
 
 
 def _registration_is_valid(value: str) -> bool:
-    if not re.fullmatch(r"[\d .-]+", value):
+    clean = value.strip().upper()
+    if not re.fullmatch(r"[\d .-]+[X]?", clean):
         return False
-    digits = re.sub(r"\D", "", value)
-    return 8 <= len(digits) <= 11 and not re.fullmatch(r"(\d)\1+", digits)
+    chars = re.sub(r"[^\dX]", "", clean)
+    return 7 <= len(chars) <= 11 and not re.fullmatch(r"(\d)\1+", chars)
 
 
 def _category_is_valid(value: str) -> bool:
