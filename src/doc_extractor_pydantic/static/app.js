@@ -112,6 +112,13 @@ input.addEventListener("change", () => {
 });
 
 window.addEventListener("paste", (e) => {
+  const target = e.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.closest(".field-value") || target.isContentEditable || target.matches("input, textarea"))
+  ) {
+    return;
+  }
   const clipboardFiles = e.clipboardData?.files;
   if (!clipboardFiles || !clipboardFiles.length) return;
   const file = [...clipboardFiles].find(

@@ -307,6 +307,29 @@ def test_pasting_image_from_clipboard_populates_input(page_at_home: Page) -> Non
     assert "print.png" in page.locator("#status").inner_text()
 
 
+def test_pasting_while_editing_field_does_not_replace_document(page_at_home: Page) -> None:
+    page = page_at_home
+    answer(page)
+    upload(page, name="original.pdf")
+    analyze(page)
+
+    cpf_field = page.locator('[data-field-label="cpf"] .field-value')
+    cpf_field.focus()
+
+    page.evaluate(
+        """() => {
+            const dt = new DataTransfer();
+            const file = new File(["fake"], "print.png", { type: "image/png" });
+            dt.items.add(file);
+            const target = document.querySelector('[data-field-label="cpf"] .field-value');
+            target.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
+        }"""
+    )
+
+    assert not page.locator("#result").is_hidden()
+    assert "print.png" not in page.locator("#status").inner_text()
+
+
 def test_zoom_rotate_rotates_focus_image(page_at_home: Page) -> None:
     page = page_at_home
     body_with_preview = dict(RESULT)
