@@ -373,7 +373,7 @@ class FakeAgent:
     def __init__(self) -> None:
         self.messages = None
 
-    async def run(self, messages):
+    async def run(self, messages, *args, **kwargs):
         self.messages = messages
         return type(
             "FakeResult",
@@ -382,14 +382,19 @@ class FakeAgent:
                 "output": DocumentExtraction(
                     kind="unknown",
                     warnings=["Documento de teste."],
-                )
+                ),
+                "usage": lambda self: type(
+                    "FakeUsage",
+                    (),
+                    {"requests": 1, "input_tokens": 120, "output_tokens": 45},
+                )(),
             },
         )()
 
 
 def test_slow_provider_is_cut_by_the_local_timeout(monkeypatch) -> None:
     class SlowAgent:
-        async def run(self, messages):
+        async def run(self, messages, *args, **kwargs):
             await asyncio.sleep(5)
 
     monkeypatch.setattr(extractor_module, "EXTRACTION_TIMEOUT_SECONDS", 0.05)
@@ -411,7 +416,7 @@ def test_transient_provider_503_uses_one_backoff_retry(monkeypatch) -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        async def run(self, messages):
+        async def run(self, messages, *args, **kwargs):
             self.calls += 1
             if self.calls == 1:
                 raise ModelHTTPError(503, "test:model", {"status": "unavailable"})
@@ -431,7 +436,7 @@ def test_transient_provider_503_uses_one_backoff_retry(monkeypatch) -> None:
 
 def test_exhausted_provider_503_becomes_provider_unavailable(monkeypatch) -> None:
     class UnavailableAgent:
-        async def run(self, messages):
+        async def run(self, messages, *args, **kwargs):
             raise ModelHTTPError(503, "test:model", {"status": "unavailable"})
 
     monkeypatch.setattr(extractor_module, "PROVIDER_BACKOFF_SECONDS", 0)
@@ -534,3 +539,23 @@ def test_rg_rejects_x_in_middle_or_invalid_letters() -> None:
     )
     assert extraction.fields.registration is None
     assert any("registro" in w for w in extraction.warnings)
+
+
+def test_google_cloud_provider_applies_minimal_thinking(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    agent = DocumentExtractor(
+        Settings(model="google-cloud:gemini-3.5-flash-lite")
+    )._build_agent()
+    assert agent.model_settings == {
+        "google_thinking_config": {"thinking_level": "MINIMAL"}
+    }
+
+
+def test_extraction_includes_usage_metadata() -> None:
+    extractor = DocumentExtractor(settings=Settings(model="test:model"), agent=FakeAgent())
+    result = asyncio.run(extractor.extract("doc.png", PNG))
+    assert result["usage"] == {
+        "requests": 1,
+        "inputTokens": 120,
+        "outputTokens": 45,
+    }

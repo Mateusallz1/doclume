@@ -8,7 +8,7 @@ from pathlib import PurePath
 from typing import Any
 
 import httpx
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent, BinaryContent, UsageLimits
 from pydantic_ai.exceptions import ModelHTTPError
 from pypdf import PageObject, PdfReader
 from pypdf.generic import ArrayObject, ContentStream, StreamObject
@@ -86,7 +86,8 @@ class DocumentExtractor:
 
     def _build_agent(self) -> Agent:
         model_settings: dict[str, object] | None = None
-        if self.settings.model.lower().startswith("google:"):
+        model_lower = self.settings.model.lower()
+        if model_lower.startswith(("google:", "google-cloud:", "google-gla:", "google-vertex:")):
             model_settings = {
                 "google_thinking_config": {"thinking_level": "MINIMAL"}
             }
@@ -142,18 +143,33 @@ class DocumentExtractor:
         extraction = result.output
         if not isinstance(extraction, DocumentExtraction):
             extraction = DocumentExtraction.model_validate(extraction)
+        raw_usage = getattr(result, "usage", None)
+        usage = raw_usage() if callable(raw_usage) else raw_usage
+        usage_data = (
+            {
+                "requests": getattr(usage, "requests", 1),
+                "inputTokens": getattr(usage, "input_tokens", 0),
+                "outputTokens": getattr(usage, "output_tokens", 0),
+            }
+            if usage is not None
+            else None
+        )
         duration_ms = round((time.perf_counter() - started) * 1000)
         return to_api_response(
             extraction,
             pages=pages,
             duration_ms=duration_ms,
             previews=previews,
+            usage=usage_data,
         )
 
     async def _run_provider_with_backoff(self, message_parts: list[object]) -> Any:
         for attempt in range(PROVIDER_RETRIES + 1):
             try:
-                return await self.agent.run(message_parts)
+                return await self.agent.run(
+                    message_parts,
+                    usage_limits=UsageLimits(response_tokens_limit=1500, request_limit=2),
+                )
             except ModelHTTPError as error:
                 retryable = error.status_code in {429, 500, 502, 503, 504}
                 if not retryable or attempt >= PROVIDER_RETRIES:
@@ -497,6 +513,7 @@ def to_api_response(
     pages: int,
     duration_ms: int,
     previews: list[dict[str, Any]] | None = None,
+    usage: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     fields: dict[str, dict[str, Any]] = {}
     for key, value in extraction.fields.populated().items():
@@ -525,6 +542,7 @@ def to_api_response(
         "warnings": extraction.warnings,
         "durationMs": duration_ms,
         "previews": cleaned_previews,
+        "usage": usage,
     }
 
 
