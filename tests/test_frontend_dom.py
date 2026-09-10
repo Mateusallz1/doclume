@@ -397,3 +397,18 @@ def test_copy_core_copies_only_values_without_labels(page_at_home: Page) -> None
     assert "10/02/1990" in copied
     assert "Nome:" not in copied
     assert "CPF:" not in copied
+
+
+def test_image_upload_uses_interactive_focus_viewer_without_broken_preview(
+    page_at_home: Page,
+) -> None:
+    page = page_at_home
+    answer(page)
+    upload(page, name="photo.png")
+    analyze(page)
+
+    assert page.locator("#focus-panel").is_visible()
+    assert page.locator("#focus-image").is_visible()
+    src = page.locator("#focus-image").get_attribute("src")
+    assert src is not None and src.startswith("blob:")
+    assert page.locator("#image-preview").is_hidden()
