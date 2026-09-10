@@ -1,41 +1,41 @@
-# Arquitetura
+# Architecture
 
-## Escopo
+## Scope
 
-Piloto local de extração de dados de RG e CNH a partir de imagens e PDFs. Não
-há banco de dados, fila, armazenamento permanente ou preenchimento automático
-de sistemas externos.
+Local pilot for extracting RG and CNH data from images and PDFs. There is no
+database, message queue, permanent storage, or automated submission to external
+systems.
 
-## Fluxo principal
+## Main Flow
 
 ```text
-navegador
+browser
   -> FastAPI /api/extract
-  -> validação local do upload
+  -> local upload validation
   -> DocumentExtractor
-  -> imagem principal incorporada como apoio, quando existir
+  -> primary embedded image as support, when present
   -> PydanticAI Agent
-  -> provider multimodal configurado
-  -> DocumentExtraction validado por Pydantic
-  -> resposta para revisão humana
+  -> configured multimodal provider
+  -> DocumentExtraction validated by Pydantic
+  -> structured response for human review
 ```
 
-## Camadas
+## Layers
 
-- `main.py`: runtime HTTP, health check e mapeamento de erros.
-- `extractor.py`: upload, metadados de PDF, imagens incorporadas, entrada
-  multimodal e contrato da API.
-- `models.py`: tipos Pydantic e validações semânticas dos campos.
-- `prompts.py`: instruções de extração e regras contra invenção de dados.
-- `static/index.html`, `static/app.css`, `static/app.js`: interface local, detalhe
-  ampliado, revisão e cópia. Separados em três arquivos para que a CSP não
-  precise de `'unsafe-inline'`.
-- `tests/`: testes sem chamada externa ao provider.
+- `main.py`: HTTP runtime, health checks, and error mappings.
+- `extractor.py`: upload handling, PDF metadata, embedded images, multimodal
+  input, and API contract.
+- `models.py`: Pydantic models and semantic field validations.
+- `prompts.py`: extraction instructions and rules preventing data hallucination.
+- `static/index.html`, `static/app.css`, `static/app.js`: local interface, zoomed
+  detail view, review, and copying. Split into three files so the CSP does not
+  require `'unsafe-inline'`.
+- `tests/`: tests running without external calls to the provider.
 
-## Limites de dependência
+## Dependency Boundaries
 
-- A interface não deve conhecer detalhes de provider, prompt ou credencial.
-- O modelo não deve ser tratado como fonte de verdade sem validação e revisão.
-- O backend não deve persistir documentos recebidos.
-- Regras de segurança e privacidade devem ser aplicáveis mecanicamente por testes
-  ou checks sempre que possível.
+- The frontend interface must not know provider details, prompts, or credentials.
+- The model must not be treated as a source of truth without validation and review.
+- The backend must not persist uploaded documents.
+- Security and privacy rules must be mechanically enforceable by tests or checks
+  whenever possible.
