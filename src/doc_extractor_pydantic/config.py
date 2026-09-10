@@ -52,7 +52,7 @@ class Settings:
             return bool(os.getenv("OPENAI_API_KEY"))
         if provider == "anthropic":
             return bool(os.getenv("ANTHROPIC_API_KEY"))
-        if provider in {"google", "google-gla", "google-vertex"}:
+        if provider in {"google", "google-cloud", "google-gla", "google-vertex"}:
             return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
         return True
 

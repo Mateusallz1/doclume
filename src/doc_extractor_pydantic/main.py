@@ -300,12 +300,16 @@ async def extract(document: UploadFile = File(...)) -> dict[str, object]:
         finally:
             await document.close()
 
+    usage_info = result.get("usage") or {}
     logger.info(
-        "document extraction completed: kind=%s pages=%s fields=%s duration_ms=%s",
+        "document extraction completed: kind=%s pages=%s fields=%s duration_ms=%s "
+        "tokens_in=%s tokens_out=%s",
         result["kind"],
         result["pages"],
         len(result["fields"]),
         result["durationMs"],
+        usage_info.get("inputTokens", 0),
+        usage_info.get("outputTokens", 0),
     )
     return result
 
