@@ -246,6 +246,7 @@ function renderFocusPreview() {
   if (focusImage.getAttribute("src") !== preview.src) {
     focusImage.src = preview.src;
   }
+  focusImage.alt = preview.label || "Detalhe do documento";
   fitFocusImage(preview);
   resetZoom();
   [...focusThumbnails.children].forEach((thumbnail, index) => {
@@ -254,36 +255,49 @@ function renderFocusPreview() {
 }
 
 function renderFocusPreviews(previews, kind) {
-  focusState.previews = previews || [];
+  focusState.previews = (previews && previews.length) ? previews : [];
   focusState.index = 0;
   focusState.kind = kind || "unknown";
   focusThumbnails.replaceChildren();
+  if (!focusState.previews.length && !selectedIsPdf && previewUrl) {
+    focusState.previews = [{
+      label: "Documento",
+      primary: true,
+      src: previewUrl,
+    }];
+  }
   if (!focusState.previews.length) {
     focusPanel.classList.add("hidden");
     focusEmpty.classList.toggle("hidden", !selectedIsPdf);
-  focusImage.removeAttribute("src");
-  focusImage.classList.remove("focus-image-qr");
-  focusImageContainer.classList.remove("focus-fit");
+    focusImage.removeAttribute("src");
+    focusImage.classList.remove("focus-image-qr");
+    focusImageContainer.classList.remove("focus-fit");
     focusImageContainer.style.removeProperty("height");
     return;
   }
+  imagePreview.classList.add("hidden");
   focusPanel.classList.remove("hidden");
   focusEmpty.classList.add("hidden");
-  focusState.previews.forEach((preview, index) => {
-    const thumbnail = document.createElement("button");
-    thumbnail.type = "button";
-    thumbnail.className = "focus-thumb";
-    thumbnail.title = preview.label || `Detalhe ${index + 1}`;
-    const image = document.createElement("img");
-    image.src = preview.src;
-    image.alt = preview.label || `Detalhe ${index + 1}`;
-    thumbnail.append(image);
-    thumbnail.addEventListener("click", () => {
-      focusState.index = index;
-      renderFocusPreview();
+  if (focusState.previews.length > 1) {
+    focusThumbnails.classList.remove("hidden");
+    focusState.previews.forEach((preview, index) => {
+      const thumbnail = document.createElement("button");
+      thumbnail.type = "button";
+      thumbnail.className = "focus-thumb";
+      thumbnail.title = preview.label || `Detalhe ${index + 1}`;
+      const image = document.createElement("img");
+      image.src = preview.src;
+      image.alt = preview.label || `Detalhe ${index + 1}`;
+      thumbnail.append(image);
+      thumbnail.addEventListener("click", () => {
+        focusState.index = index;
+        renderFocusPreview();
+      });
+      focusThumbnails.append(thumbnail);
     });
-    focusThumbnails.append(thumbnail);
-  });
+  } else {
+    focusThumbnails.classList.add("hidden");
+  }
   renderFocusPreview();
 }
 
@@ -555,7 +569,8 @@ document.querySelector("#download-csv")?.addEventListener("click", () => {
   const items = getExtractedItems();
   const lines = [["Campo", "Valor"]];
   for (const it of items) {
-    const escapedVal = `"${it.value.replace(/"/g, '""')}"`;
+    const cleanVal = it.value.replace(/\r?\n/g, " / ");
+    const escapedVal = `"${cleanVal.replace(/"/g, '""')}"`;
     lines.push([`"${it.label.replace(/"/g, '""')}"`, escapedVal]);
   }
   const csvText = "\uFEFF" + lines.map((r) => r.join(";")).join("\r\n");

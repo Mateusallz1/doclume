@@ -381,6 +381,35 @@ def test_download_json_and_csv_trigger_downloads(page_at_home: Page) -> None:
     assert download.suggested_filename.endswith(".csv")
 
 
+def test_download_csv_sanitizes_multiline_fields(page_at_home: Page) -> None:
+    from pathlib import Path
+
+    page = page_at_home
+    body = {
+        **RESULT,
+        "fields": {
+            **RESULT["fields"],
+            "parentage": {
+                "value": "MARIA MAE\nJOSE PAI",
+                "confidence": "high",
+                "label": "Filiação",
+            },
+        },
+    }
+    answer(page, body=body)
+    upload(page)
+    analyze(page)
+
+    with page.expect_download() as download_info:
+        page.click("#download-csv")
+    download = download_info.value
+    csv_path = download.path()
+    assert csv_path is not None
+    csv_text = Path(csv_path).read_text(encoding="utf-8")
+    assert "MARIA MAE / JOSE PAI" in csv_text
+    assert "MARIA MAE\n" not in csv_text
+
+
 def test_copy_core_copies_only_values_without_labels(page_at_home: Page) -> None:
     page = page_at_home
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
@@ -397,3 +426,18 @@ def test_copy_core_copies_only_values_without_labels(page_at_home: Page) -> None
     assert "10/02/1990" in copied
     assert "Nome:" not in copied
     assert "CPF:" not in copied
+
+
+def test_image_upload_uses_interactive_focus_viewer_without_broken_preview(
+    page_at_home: Page,
+) -> None:
+    page = page_at_home
+    answer(page)
+    upload(page, name="photo.png")
+    analyze(page)
+
+    assert page.locator("#focus-panel").is_visible()
+    assert page.locator("#focus-image").is_visible()
+    src = page.locator("#focus-image").get_attribute("src")
+    assert src is not None and src.startswith("blob:")
+    assert page.locator("#image-preview").is_hidden()

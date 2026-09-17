@@ -1,45 +1,45 @@
-"""Limites locais aplicados antes de qualquer trabalho caro sobre o documento."""
+"""Local operational limits applied before expensive processing on documents."""
 
 from __future__ import annotations
 
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
-"""Folga para o envelope multipart em torno do arquivo enviado."""
+"""Allowance for multipart envelope surrounding uploaded file."""
 
 MAX_PDF_PAGES = 20
-"""Páginas aceitas em um PDF de RG/CNH."""
+"""Maximum allowed pages in an ID/driver license PDF."""
 
 MAX_PREVIEW_IMAGES = 4
-"""Detalhes exibidos na interface."""
+"""Maximum preview details displayed in the interface."""
 
 MAX_PREVIEW_SCAN_PAGES = 4
-"""Páginas percorridas na busca por imagens incorporadas."""
+"""Pages scanned when searching for embedded images."""
 
 MAX_PREVIEW_CANDIDATES = 24
-"""Candidatas coletadas antes de ordenar e cortar."""
+"""Candidate images collected before sorting and trimming."""
 
 MAX_PREVIEW_PIXELS = 40_000_000
-"""Pixels aceitos em uma imagem incorporada, medidos sem descomprimir."""
+"""Maximum allowed pixels in an embedded image, checked without decompression."""
 
 MAX_CONTENT_STREAM_BYTES = 8 * 1024 * 1024
-"""Bytes descomprimidos aceitos no content stream de uma página."""
+"""Maximum decompressed bytes accepted in a single page content stream."""
 
 MIN_PREVIEW_SIDE = 200
-"""Menor lado aceito para uma imagem virar detalhe."""
+"""Minimum pixel dimension for an image to become a focus detail."""
 
 MAX_STREAM_OPERATIONS = 10_000
-"""Limite de operadores percorridos no stream de uma página para evitar bloqueio da CPU."""
+"""Limit on stream operators scanned per page to prevent CPU starvation."""
 
 MAX_CONCURRENT_EXTRACTIONS = 2
-"""Análises simultâneas aceitas por este processo."""
+"""Maximum concurrent extraction requests handled by this server process."""
 
 EXTRACTION_TIMEOUT_SECONDS = 90.0
-"""Tempo total aceito para a resposta do provedor, já incluindo as tentativas."""
+"""Total time budget allowed for provider responses, including retries."""
 
 PROVIDER_RETRIES = 1
-"""Tentativa adicional para saída inválida ou falha transitória do provider."""
+"""Additional attempt for invalid structured output or transient provider failure."""
 
 PROVIDER_BACKOFF_SECONDS = 1.0
-"""Espera inicial antes de repetir uma falha transitória do provider."""
+"""Initial exponential backoff delay before retrying transient provider failures."""
 
 
 def upload_limit_message(max_upload_bytes: int) -> str:

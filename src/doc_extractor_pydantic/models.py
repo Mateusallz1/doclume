@@ -23,7 +23,7 @@ EXPECTED_FIELDS: dict[str, tuple[str, ...]] = {
     "rg": ("name", "cpf", "birth_date", "issue_date", "birth_place", "parentage"),
     "unknown": ("name", "cpf", "birth_date"),
 }
-"""Campos que fazem sentido cobrar de cada tipo de documento."""
+"""Fields expected to be queried for each document type."""
 
 FIELD_TERMS: dict[str, tuple[str, ...]] = {
     "registration": ("registro",),
@@ -33,7 +33,7 @@ FIELD_TERMS: dict[str, tuple[str, ...]] = {
     "birth_place": ("local de nascimento", "naturalidade"),
     "parentage": ("filiação",),
 }
-"""Como o modelo costuma se referir a cada campo ao escrever um aviso."""
+"""Terms the model commonly uses when writing a warning for a field."""
 
 
 def warning_applies(warning: str, kind: str) -> bool:
@@ -51,7 +51,7 @@ def warning_applies(warning: str, kind: str) -> bool:
     )
 
 
-def _cpf_is_valid(value: str) -> bool:
+def _is_valid_cpf(value: str) -> bool:
     if not re.fullmatch(r"\s*\d{3}[ .-]?\d{3}[ .-]?\d{3}[ .-]?\d{2}\s*", value):
         return False
     digits = re.sub(r"\D", "", value)
@@ -69,7 +69,7 @@ def _cpf_is_valid(value: str) -> bool:
     return True
 
 
-def _br_date(value: str) -> date | None:
+def _parse_brazilian_date(value: str) -> date | None:
     if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", value.strip()):
         return None
     day, month, year = (int(part) for part in value.split("/"))
@@ -81,7 +81,7 @@ def _br_date(value: str) -> date | None:
         return None
 
 
-def _registration_is_valid(value: str) -> bool:
+def _is_valid_registration(value: str) -> bool:
     clean = value.strip().upper()
     if not re.fullmatch(r"[\d .-]+[X]?", clean):
         return False
@@ -89,7 +89,7 @@ def _registration_is_valid(value: str) -> bool:
     return 7 <= len(chars) <= 11 and not re.fullmatch(r"(\d)\1+", chars)
 
 
-def _category_is_valid(value: str) -> bool:
+def _is_valid_category(value: str) -> bool:
     return re.fullmatch(r"(?:[A-E]|A[BCDE]|ACC)", value.strip().upper()) is not None
 
 
@@ -136,9 +136,9 @@ class DocumentFields(BaseModel):
 
         issues: list[str] = []
         checks = (
-            ("cpf", "O CPF", "confirmado", _cpf_is_valid),
-            ("registration", "O registro", "confirmado", _registration_is_valid),
-            ("category", "A categoria", "confirmada", _category_is_valid),
+            ("cpf", "O CPF", "confirmado", _is_valid_cpf),
+            ("registration", "O registro", "confirmado", _is_valid_registration),
+            ("category", "A categoria", "confirmada", _is_valid_category),
         )
         for attribute, label, verb, validator in checks:
             field = getattr(self, attribute)
@@ -168,7 +168,7 @@ class DocumentFields(BaseModel):
             field = getattr(self, attribute)
             if field is None or field.value is None:
                 continue
-            parsed = _br_date(field.value)
+            parsed = _parse_brazilian_date(field.value)
             if parsed is None:
                 setattr(self, attribute, None)
                 issues.append(f"A data de {date_labels[attribute]} não pôde ser confirmada.")
