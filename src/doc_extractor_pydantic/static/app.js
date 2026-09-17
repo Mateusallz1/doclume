@@ -361,7 +361,7 @@ function isValidDate(str) {
   const day = parseInt(match[1], 10);
   const month = parseInt(match[2], 10);
   const year = parseInt(match[3], 10);
-  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return false;
   const d = new Date(year, month - 1, day);
   return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
 }
@@ -374,7 +374,17 @@ function checkFieldValidity(key, text) {
     return true;
   }
   if (key === "birthDate" || key === "issueDate" || key === "validity") {
-    if (text.trim().length >= 10) return isValidDate(text);
+    if (text.trim().length >= 10) {
+      if (!isValidDate(text)) return false;
+      const [day, month, year] = text.trim().split("/").map(Number);
+      const now = new Date();
+      if ((key === "birthDate" || key === "issueDate") && new Date(year, month - 1, day) > now) {
+        return false;
+      }
+      if (key === "validity" && year > now.getFullYear() + 15) {
+        return false;
+      }
+    }
     return true;
   }
   return true;

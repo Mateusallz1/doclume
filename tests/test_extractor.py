@@ -508,6 +508,49 @@ def test_pydantic_output_removes_incoherent_birth_and_validity() -> None:
     assert any("incompatíveis" in w for w in extraction.warnings)
 
 
+def test_parse_brazilian_date_enforces_year_bounds() -> None:
+    from doc_extractor_pydantic.models import _parse_brazilian_date
+
+    assert _parse_brazilian_date("10/02/1899") is None
+    assert _parse_brazilian_date("10/02/1900") is not None
+    assert _parse_brazilian_date("10/02/2030") is not None
+    assert _parse_brazilian_date("10/02/2100") is not None
+    assert _parse_brazilian_date("10/02/2101") is None
+    assert _parse_brazilian_date("10/02/2925") is None
+
+
+def test_pydantic_output_removes_excessively_distant_validity() -> None:
+    extraction = DocumentExtraction(
+        fields={
+            "validity": {"value": "10/02/2050", "confidence": "high"},
+        },
+    )
+    assert extraction.fields.validity is None
+    assert any("excessivamente distante" in w for w in extraction.warnings)
+
+
+def test_pydantic_output_removes_validity_too_far_from_issue_date() -> None:
+    extraction = DocumentExtraction(
+        fields={
+            "issue_date": {"value": "10/02/2015", "confidence": "high"},
+            "validity": {"value": "10/02/2035", "confidence": "high"},
+        },
+    )
+    assert extraction.fields.validity is None
+    assert any("excessivamente distante" in w for w in extraction.warnings)
+
+
+def test_pydantic_output_preserves_realistic_future_validity() -> None:
+    extraction = DocumentExtraction(
+        fields={
+            "issue_date": {"value": "10/02/2024", "confidence": "high"},
+            "validity": {"value": "10/02/2034", "confidence": "high"},
+        },
+    )
+    assert extraction.fields.validity is not None
+    assert extraction.fields.validity.value == "10/02/2034"
+
+
 def test_rg_keeps_warning_about_registro_geral() -> None:
     extraction = DocumentExtraction(
         kind="rg",

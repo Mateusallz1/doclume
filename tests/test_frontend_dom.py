@@ -363,6 +363,20 @@ def test_field_dynamic_validation_flags_invalid_values(page_at_home: Page) -> No
     cpf_field.fill("123.456.789-09")
     assert "field-invalid" not in (cpf_field.get_attribute("class") or "")
 
+    birth_field = page.locator('[data-field-label="birthDate"] .field-value')
+    birth_field.fill("10/02/2099")
+    assert "field-invalid" in (birth_field.get_attribute("class") or "")
+
+    birth_field.fill("10/02/1990")
+    assert "field-invalid" not in (birth_field.get_attribute("class") or "")
+
+    validity_field = page.locator('[data-field-label="validity"] .field-value')
+    validity_field.fill("10/02/2099")
+    assert "field-invalid" in (validity_field.get_attribute("class") or "")
+
+    validity_field.fill("10/02/2030")
+    assert "field-invalid" not in (validity_field.get_attribute("class") or "")
+
 
 def test_download_json_and_csv_trigger_downloads(page_at_home: Page) -> None:
     page = page_at_home
