@@ -381,6 +381,35 @@ def test_download_json_and_csv_trigger_downloads(page_at_home: Page) -> None:
     assert download.suggested_filename.endswith(".csv")
 
 
+def test_download_csv_sanitizes_multiline_fields(page_at_home: Page) -> None:
+    from pathlib import Path
+
+    page = page_at_home
+    body = {
+        **RESULT,
+        "fields": {
+            **RESULT["fields"],
+            "parentage": {
+                "value": "MARIA MAE\nJOSE PAI",
+                "confidence": "high",
+                "label": "Filiação",
+            },
+        },
+    }
+    answer(page, body=body)
+    upload(page)
+    analyze(page)
+
+    with page.expect_download() as download_info:
+        page.click("#download-csv")
+    download = download_info.value
+    csv_path = download.path()
+    assert csv_path is not None
+    csv_text = Path(csv_path).read_text(encoding="utf-8")
+    assert "MARIA MAE / JOSE PAI" in csv_text
+    assert "MARIA MAE\n" not in csv_text
+
+
 def test_copy_core_copies_only_values_without_labels(page_at_home: Page) -> None:
     page = page_at_home
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])

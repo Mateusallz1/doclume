@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 from pydantic_ai import Agent, BinaryContent, UsageLimits
 from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.result import RunUsage
 from pypdf import PageObject, PdfReader
 from pypdf.generic import ArrayObject, ContentStream, StreamObject
 
@@ -144,7 +145,12 @@ class DocumentExtractor:
         if not isinstance(extraction, DocumentExtraction):
             extraction = DocumentExtraction.model_validate(extraction)
         raw_usage = getattr(result, "usage", None)
-        usage = raw_usage() if callable(raw_usage) else raw_usage
+        if isinstance(raw_usage, RunUsage):
+            usage = raw_usage
+        elif callable(raw_usage):
+            usage = raw_usage()
+        else:
+            usage = raw_usage
         usage_data = (
             {
                 "requests": getattr(usage, "requests", 1),

@@ -302,3 +302,7 @@ def test_provider_unavailable_is_returned_as_retryable_503(monkeypatch) -> None:
 
     assert response.status_code == 503
     assert response.json()["detail"] == "provider indisponível"
+
+
+def test_app_title_is_doclume() -> None:
+    assert main_module.app.title == "DocLume"

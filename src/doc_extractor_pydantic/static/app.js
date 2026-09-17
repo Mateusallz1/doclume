@@ -569,7 +569,8 @@ document.querySelector("#download-csv")?.addEventListener("click", () => {
   const items = getExtractedItems();
   const lines = [["Campo", "Valor"]];
   for (const it of items) {
-    const escapedVal = `"${it.value.replace(/"/g, '""')}"`;
+    const cleanVal = it.value.replace(/\r?\n/g, " / ");
+    const escapedVal = `"${cleanVal.replace(/"/g, '""')}"`;
     lines.push([`"${it.label.replace(/"/g, '""')}"`, escapedVal]);
   }
   const csvText = "\uFEFF" + lines.map((r) => r.join(";")).join("\r\n");

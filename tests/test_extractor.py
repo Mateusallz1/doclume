@@ -559,3 +559,31 @@ def test_extraction_includes_usage_metadata() -> None:
         "inputTokens": 120,
         "outputTokens": 45,
     }
+
+
+def test_extraction_handles_pydantic_ai_run_usage_without_deprecation_warning() -> None:
+    import warnings
+
+    from pydantic_ai.result import RunUsage
+
+    class RunUsageAgent:
+        async def run(self, messages, *args, **kwargs):
+            return type(
+                "RunUsageResult",
+                (),
+                {
+                    "output": DocumentExtraction(kind="unknown"),
+                    "usage": RunUsage(requests=2, input_tokens=350, output_tokens=80),
+                },
+            )()
+
+    extractor = DocumentExtractor(settings=Settings(model="test:model"), agent=RunUsageAgent())
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = asyncio.run(extractor.extract("doc.png", PNG))
+
+    assert result["usage"] == {
+        "requests": 2,
+        "inputTokens": 350,
+        "outputTokens": 80,
+    }

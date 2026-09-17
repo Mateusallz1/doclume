@@ -57,7 +57,7 @@ SECURITY_HEADERS = {
 }
 
 app = FastAPI(
-    title="Doc Extractor PydanticAI",
+    title="DocLume",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
