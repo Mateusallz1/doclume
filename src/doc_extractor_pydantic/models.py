@@ -69,11 +69,14 @@ def _is_valid_cpf(value: str) -> bool:
     return True
 
 
+MAX_VALIDITY_HORIZON_YEARS = 15
+
+
 def _parse_brazilian_date(value: str) -> date | None:
     if not re.fullmatch(r"\d{2}/\d{2}/\d{4}", value.strip()):
         return None
     day, month, year = (int(part) for part in value.split("/"))
-    if year < 1900:
+    if year < 1900 or year > 2100:
         return None
     try:
         return date(year, month, day)
@@ -187,6 +190,13 @@ class DocumentFields(BaseModel):
             self.issue_date = None
             issue_date = None
             issues.append("A data de emissão não pode ser no futuro.")
+        if validity and (
+            validity > date(today.year + MAX_VALIDITY_HORIZON_YEARS, 12, 31)
+            or (issue_date and validity.year > issue_date.year + MAX_VALIDITY_HORIZON_YEARS)
+        ):
+            self.validity = None
+            validity = None
+            issues.append("A data de validade é excessivamente distante no futuro.")
         if birth_date and issue_date and birth_date >= issue_date:
             self.birth_date = None
             self.issue_date = None
