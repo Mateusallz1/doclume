@@ -404,21 +404,21 @@ def test_slow_provider_is_cut_by_the_local_timeout(monkeypatch) -> None:
         asyncio.run(extractor.extract("doc.png", PNG))
 
 
-def test_agent_keeps_a_single_extra_attempt(monkeypatch) -> None:
+def test_agent_keeps_additional_attempts(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     agent = DocumentExtractor(Settings(model="google:gemini-3.5-flash-lite"))._build_agent()
-    assert PROVIDER_RETRIES == 1
+    assert PROVIDER_RETRIES == 2
     assert agent._max_output_retries == PROVIDER_RETRIES
 
 
-def test_transient_provider_503_uses_one_backoff_retry(monkeypatch) -> None:
+def test_transient_provider_503_uses_backoff_retry(monkeypatch) -> None:
     class FlakyAgent:
         def __init__(self) -> None:
             self.calls = 0
 
         async def run(self, messages, *args, **kwargs):
             self.calls += 1
-            if self.calls == 1:
+            if self.calls < 3:
                 raise ModelHTTPError(503, "test:model", {"status": "unavailable"})
             return type("FakeResult", (), {"output": DocumentExtraction(kind="unknown")})()
 
@@ -430,22 +430,28 @@ def test_transient_provider_503_uses_one_backoff_retry(monkeypatch) -> None:
         )
     )
 
-    assert agent.calls == 2
+    assert agent.calls == 3
     assert result["kind"] == "unknown"
 
 
 def test_exhausted_provider_503_becomes_provider_unavailable(monkeypatch) -> None:
     class UnavailableAgent:
+        def __init__(self) -> None:
+            self.calls = 0
+
         async def run(self, messages, *args, **kwargs):
+            self.calls += 1
             raise ModelHTTPError(503, "test:model", {"status": "unavailable"})
 
+    agent = UnavailableAgent()
     monkeypatch.setattr(extractor_module, "PROVIDER_BACKOFF_SECONDS", 0)
     with pytest.raises(ProviderUnavailableError, match="temporariamente indisponível"):
         asyncio.run(
-            DocumentExtractor(
-                settings=Settings(model="test:model"), agent=UnavailableAgent()
-            ).extract("doc.png", PNG)
+            DocumentExtractor(settings=Settings(model="test:model"), agent=agent).extract(
+                "doc.png", PNG
+            )
         )
+    assert agent.calls == 3
 
 
 def test_extractor_sends_multimodal_content_without_writing_file() -> None:

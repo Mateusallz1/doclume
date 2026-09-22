@@ -25,7 +25,7 @@ sobre o documento.
 | Detalhes retornados | 4 | Corte antes de decodificar e codificar em base64 |
 | Análises simultâneas | 2 | `/api/extract`, com `429` acima disso |
 | Tempo de resposta do provedor | 90 s | `asyncio.wait_for` na chamada do agente, com `504` |
-| Tentativas do agente | 1 adicional | Saída que não passa na validação |
+| Tentativas do agente | 2 adicionais | Falhas transitórias (503/timeout) ou saída inválida |
 
 O PDF é aberto uma única vez por requisição: `validate_upload` devolve o
 `PdfReader` já validado e o restante do fluxo reaproveita esse objeto.
@@ -52,8 +52,8 @@ desenhado várias vezes na mesma página vira um único detalhe.
   automática. Ver [SECURITY.md](SECURITY.md).
 - Um único stream comprimido ainda pode ocupar até o teto do `pypdf` (75 MB) ao
   ser descomprimido, antes de o limite de 8 MB por página descartá-lo.
-- O retry do agente ainda pode repetir uma chamada quando a saída não é válida,
-  agora uma única vez e dentro do mesmo tempo limite total.
+- O retry do agente pode repetir uma chamada em caso de falha transitória (503/timeout) ou saída inválida,
+  até 2 vezes adicionais e dentro do mesmo tempo limite total.
 - A extração de imagens incorporadas é uma melhoria de prévia; se falhar, o PDF
   não impede a análise, e a interface informa que não há detalhe ampliado.
 - A camada gratuita do provider pode apresentar variação de latência e políticas
