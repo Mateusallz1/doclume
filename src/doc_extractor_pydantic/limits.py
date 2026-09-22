@@ -35,10 +35,10 @@ MAX_CONCURRENT_EXTRACTIONS = 2
 EXTRACTION_TIMEOUT_SECONDS = 90.0
 """Total time budget allowed for provider responses, including retries."""
 
-PROVIDER_RETRIES = 1
-"""Additional attempt for invalid structured output or transient provider failure."""
+PROVIDER_RETRIES = 2
+"""Additional attempts for invalid structured output or transient provider failure."""
 
-PROVIDER_BACKOFF_SECONDS = 1.0
+PROVIDER_BACKOFF_SECONDS = 2.0
 """Initial exponential backoff delay before retrying transient provider failures."""
 
 

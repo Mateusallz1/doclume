@@ -174,7 +174,9 @@ class DocumentExtractor:
             try:
                 return await self.agent.run(
                     message_parts,
-                    usage_limits=UsageLimits(response_tokens_limit=1500, request_limit=2),
+                    usage_limits=UsageLimits(
+                        response_tokens_limit=1500, request_limit=PROVIDER_RETRIES + 1
+                    ),
                 )
             except ModelHTTPError as error:
                 retryable = error.status_code in {429, 500, 502, 503, 504}
