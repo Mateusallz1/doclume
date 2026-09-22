@@ -87,8 +87,10 @@ def test_late_response_cannot_overwrite_the_current_file() -> None:
     assert "const controller = new AbortController();" in submit_handler
     assert "signal: controller.signal" in submit_handler
     assert "const currentRequest = requestId;" in submit_handler
-    # Guards before rendering, before showing an error and before re-enabling.
-    assert submit_handler.count("currentRequest !== requestId") == 2
+    # Guards for the analysis timer, before rendering, before showing an error,
+    # and before re-enabling.
+    assert submit_handler.count("currentRequest !== requestId") == 3
+
     assert "if (currentRequest === requestId) {" in submit_handler
     assert 'error.name === "AbortError"' in submit_handler
 
@@ -218,3 +220,11 @@ def test_results_use_a_viewport_workspace_on_desktop() -> None:
     assert "body.has-result { overflow: auto; }" in INDEX_HTML
     assert 'document.body.classList.add("has-result");' in INDEX_HTML
     assert 'document.body.classList.remove("has-result");' in INDEX_HTML
+
+
+def test_status_feedback_supports_live_progress_and_timer() -> None:
+    assert ".status.analyzing" in INDEX_HTML
+    assert "formatProgressMessage(elapsed)" in INDEX_HTML
+    assert "analysisTimer = setInterval" in INDEX_HTML
+    assert "clearInterval(analysisTimer)" in INDEX_HTML
+
