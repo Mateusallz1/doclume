@@ -23,6 +23,20 @@ let selectedIsPdf = false;
 let requestId = 0;
 let pendingRequest = null;
 const focusState = { previews: [], index: 0, kind: "unknown" };
+let analysisTimer = null;
+
+function formatProgressMessage(elapsed) {
+  if (elapsed < 7) {
+    return `Analisando seu documento... (${elapsed}s)`;
+  }
+  if (elapsed < 18) {
+    return `Processando campos e visão computacional... (${elapsed}s)`;
+  }
+  if (elapsed < 30) {
+    return `Aguardando resposta do provedor de IA... (${elapsed}s)`;
+  }
+  return `Provedor com alta demanda; aguardando retentativas automáticas... (${elapsed}s)`;
+}
 
 function syncResultHeight() {
   if (result.classList.contains("hidden")) return;
@@ -83,6 +97,10 @@ input.addEventListener("change", () => {
   requestId += 1;
   if (pendingRequest) pendingRequest.abort();
   pendingRequest = null;
+  if (analysisTimer) {
+    clearInterval(analysisTimer);
+    analysisTimer = null;
+  }
   submit.disabled = false;
   lastData = null;
   document.body.classList.remove("has-result");
@@ -305,13 +323,28 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!input.files?.[0]) return;
   submit.disabled = true;
-  status.className = "status";
-  status.textContent = "Analisando seu documento...";
   document.body.classList.remove("has-result");
   result.classList.add("hidden");
   requestId += 1;
   const currentRequest = requestId;
   if (pendingRequest) pendingRequest.abort();
+  if (analysisTimer) {
+    clearInterval(analysisTimer);
+    analysisTimer = null;
+  }
+  status.className = "status analyzing";
+  const startedAt = Date.now();
+  status.textContent = formatProgressMessage(0);
+  analysisTimer = setInterval(() => {
+    if (currentRequest !== requestId) {
+      clearInterval(analysisTimer);
+      analysisTimer = null;
+      return;
+    }
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    status.textContent = formatProgressMessage(elapsed);
+  }, 1000);
+
   const controller = new AbortController();
   pendingRequest = controller;
   try {
@@ -321,6 +354,7 @@ form.addEventListener("submit", async (event) => {
     if (!response.ok) throw new Error(data.detail || "Não foi possível analisar o documento.");
     lastData = data;
     renderResult(data);
+    status.className = "status";
     status.textContent = "Tudo certo! Confira as informações antes de copiar.";
   } catch (error) {
     if (currentRequest !== requestId || error.name === "AbortError") return;
@@ -328,6 +362,10 @@ form.addEventListener("submit", async (event) => {
     status.textContent = error.message;
   } finally {
     if (currentRequest === requestId) {
+      if (analysisTimer) {
+        clearInterval(analysisTimer);
+        analysisTimer = null;
+      }
       pendingRequest = null;
       submit.disabled = false;
     }

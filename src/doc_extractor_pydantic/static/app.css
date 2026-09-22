@@ -38,6 +38,22 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 0; border
 .status { margin-top: 10px; min-height: 0; color: var(--muted-foreground); font-size: 0.8125rem; line-height: 1.35; }
 .status:empty { display: none; }
 .status.error { padding: 8px 10px; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; background: #fef2f2; }
+.status.analyzing { display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); }
+.status.analyzing::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  animation: status-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes status-spin {
+  to { transform: rotate(360deg); }
+}
 .notice { border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; background: var(--muted); color: var(--muted-foreground); }
 .upload-label { margin: 0 0 10px; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 body.has-extracted main { padding-top: 24px; }

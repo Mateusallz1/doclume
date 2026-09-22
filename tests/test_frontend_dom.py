@@ -455,3 +455,34 @@ def test_image_upload_uses_interactive_focus_viewer_without_broken_preview(
     src = page.locator("#focus-image").get_attribute("src")
     assert src is not None and src.startswith("blob:")
     assert page.locator("#image-preview").is_hidden()
+
+
+def test_status_shows_timer_and_analyzing_state_during_extraction(
+    page_at_home: Page,
+) -> None:
+    page = page_at_home
+    held = []
+    page.route("**/api/extract", lambda route: held.append(route))
+
+    upload(page, "doc.png")
+    page.click("#submit")
+
+    for _ in range(100):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    assert held, "a requisição não chegou a ser feita"
+
+    status = page.locator("#status")
+    assert "analyzing" in (status.get_attribute("class") or "")
+    assert "Analisando seu documento" in status.inner_text()
+    assert "s)" in status.inner_text()
+
+    held[0].fulfill(
+        status=200, content_type="application/json", body=json.dumps(RESULT)
+    )
+    page.wait_for_selector("#result:not(.hidden)")
+
+    assert "analyzing" not in (status.get_attribute("class") or "")
+    assert "Tudo certo" in status.inner_text()
+
