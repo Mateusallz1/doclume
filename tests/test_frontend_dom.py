@@ -486,3 +486,32 @@ def test_status_shows_timer_and_analyzing_state_during_extraction(
     assert "analyzing" not in (status.get_attribute("class") or "")
     assert "Tudo certo" in status.inner_text()
 
+
+def test_status_shows_formatted_elapsed_time_on_success(page_at_home: Page) -> None:
+    page = page_at_home
+    body = {**RESULT, "durationMs": 15812}
+    answer(page, body=body)
+    upload(page)
+    analyze(page)
+
+    status = page.locator("#status")
+    assert (
+        "Tudo certo em 15.8s! Confira as informações antes de copiar."
+        in status.inner_text()
+    )
+
+
+def test_status_shows_fallback_message_when_duration_is_absent(page_at_home: Page) -> None:
+    page = page_at_home
+    body = {**RESULT, "durationMs": None}
+    answer(page, body=body)
+    upload(page)
+    analyze(page)
+
+    status = page.locator("#status")
+    assert (
+        "Tudo certo! Confira as informações antes de copiar."
+        in status.inner_text()
+    )
+
+
