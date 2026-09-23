@@ -225,6 +225,7 @@ def test_results_use_a_viewport_workspace_on_desktop() -> None:
 def test_status_feedback_supports_live_progress_and_timer() -> None:
     assert ".status.analyzing" in INDEX_HTML
     assert "formatProgressMessage(elapsed)" in INDEX_HTML
+    assert "formatSuccessMessage(durationMs)" in INDEX_HTML
+    assert "formatSuccessMessage(data.durationMs)" in INDEX_HTML
     assert "analysisTimer = setInterval" in INDEX_HTML
     assert "clearInterval(analysisTimer)" in INDEX_HTML
-

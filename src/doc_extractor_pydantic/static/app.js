@@ -38,6 +38,15 @@ function formatProgressMessage(elapsed) {
   return `Provedor com alta demanda; aguardando retentativas automáticas... (${elapsed}s)`;
 }
 
+function formatSuccessMessage(durationMs) {
+  if (typeof durationMs === "number" && durationMs > 0) {
+    const seconds = durationMs < 100 ? "< 0.1s" : `${(durationMs / 1000).toFixed(1)}s`;
+    return `Tudo certo em ${seconds}! Confira as informações antes de copiar.`;
+  }
+  return "Tudo certo! Confira as informações antes de copiar.";
+}
+
+
 function syncResultHeight() {
   if (result.classList.contains("hidden")) return;
   if (window.matchMedia("(max-width: 800px)").matches) {
@@ -355,7 +364,7 @@ form.addEventListener("submit", async (event) => {
     lastData = data;
     renderResult(data);
     status.className = "status";
-    status.textContent = "Tudo certo! Confira as informações antes de copiar.";
+    status.textContent = formatSuccessMessage(data.durationMs);
   } catch (error) {
     if (currentRequest !== requestId || error.name === "AbortError") return;
     status.className = "status error";
