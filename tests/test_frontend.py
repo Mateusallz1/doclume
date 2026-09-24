@@ -237,3 +237,12 @@ def test_upload_panel_supports_drag_and_drop_interaction() -> None:
     assert 'uploadPanel.classList.remove("drag-active")' in INDEX_HTML
     assert "handleDrop(e)" in INDEX_HTML
 
+
+def test_keyboard_shortcuts_support_submit_escape_and_copy() -> None:
+    assert 'window.addEventListener("keydown"' in INDEX_HTML
+    assert 'e.key === "Enter"' in INDEX_HTML
+    assert 'e.key === "Escape"' in INDEX_HTML
+    assert 'title="Analisar documento (Ctrl+Enter)"' in INDEX_HTML
+    assert "Ctrl+Shift+C" in INDEX_HTML
+
+
