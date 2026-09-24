@@ -717,3 +717,46 @@ document.querySelector("#download-csv")?.addEventListener("click", () => {
   downloadFile(csvText, `extracao-${lastData.kind || "documento"}.csv`, "text/csv;charset=utf-8;");
   status.textContent = "Arquivo CSV baixado.";
 });
+
+window.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    if (!submit.disabled && input.files?.[0]) {
+      e.preventDefault();
+      submit.click();
+    }
+    return;
+  }
+
+  if (e.key === "Escape") {
+    if (zoomScale !== 1 || panX !== 0 || panY !== 0 || rotationDeg !== 0) {
+      e.preventDefault();
+      resetZoom();
+      return;
+    }
+  }
+
+  const isEditing =
+    e.target instanceof HTMLElement &&
+    (e.target.closest(".field-value") || e.target.isContentEditable || e.target.matches("input, textarea"));
+  if (isEditing) return;
+
+  if (lastData && !result.classList.contains("hidden")) {
+    if (
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") ||
+      (e.altKey && e.key.toLowerCase() === "c")
+    ) {
+      e.preventDefault();
+      document.querySelector("#copy-core")?.click();
+      return;
+    }
+    if (
+      (e.altKey && e.key.toLowerCase() === "a") ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "a")
+    ) {
+      e.preventDefault();
+      document.querySelector("#copy")?.click();
+      return;
+    }
+  }
+});
+

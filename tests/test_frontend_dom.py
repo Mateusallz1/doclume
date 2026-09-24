@@ -570,3 +570,52 @@ def test_dropping_unsupported_file_shows_error(page_at_home: Page) -> None:
     )
     assert "Formato não suportado" in page.locator("#status").inner_text()
     assert "error" in (page.locator("#status").get_attribute("class") or "")
+
+
+def test_ctrl_enter_triggers_document_analysis(page_at_home: Page) -> None:
+    page = page_at_home
+    answer(page)
+    upload(page)
+
+    page.keyboard.press("Control+Enter")
+    page.wait_for_selector("#result:not(.hidden)")
+
+    assert page.locator("#result").is_visible()
+    assert page.locator('.field-card[data-found="true"]').count() > 0
+
+
+def test_escape_resets_zoom_in_focus_panel(page_at_home: Page) -> None:
+    page = page_at_home
+    body_with_preview = dict(RESULT)
+    tiny_png = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    body_with_preview["previews"] = [
+        {"label": "Frente", "primary": True, "src": tiny_png}
+    ]
+    answer(page, body=body_with_preview)
+    upload(page, name="doc.pdf")
+    analyze(page)
+
+    focus_image = page.locator("#focus-image")
+    page.click("#zoom-in")
+    assert "scale(1.25)" in focus_image.evaluate("el => el.style.transform")
+
+    page.keyboard.press("Escape")
+    assert "scale(1)" in focus_image.evaluate("el => el.style.transform")
+
+
+def test_copy_shortcuts_trigger_data_copy(page_at_home: Page) -> None:
+    page = page_at_home
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    answer(page)
+    upload(page)
+    analyze(page)
+
+    page.keyboard.press("Alt+c")
+    page.wait_for_timeout(200)
+    copied = page.evaluate("navigator.clipboard.readText()")
+
+    assert "MARIA DE TESTE" in copied
+    assert "123.456.789-09" in copied
