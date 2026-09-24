@@ -515,3 +515,58 @@ def test_status_shows_fallback_message_when_duration_is_absent(page_at_home: Pag
     )
 
 
+def test_dragging_file_over_upload_panel_activates_and_resets_drag_style(
+    page_at_home: Page,
+) -> None:
+    page = page_at_home
+    page.evaluate(
+        """() => {
+            const dt = new DataTransfer();
+            const file = new File(["fake"], "documento.png", { type: "image/png" });
+            dt.items.add(file);
+            const panel = document.getElementById("upload-panel");
+            panel.dispatchEvent(new DragEvent("dragenter", { dataTransfer: dt, bubbles: true }));
+        }"""
+    )
+    assert "drag-active" in (page.locator("#upload-panel").get_attribute("class") or "")
+
+    page.evaluate(
+        """() => {
+            const dt = new DataTransfer();
+            const file = new File(["fake"], "documento.png", { type: "image/png" });
+            dt.items.add(file);
+            window.dispatchEvent(new DragEvent("dragleave", { dataTransfer: dt, bubbles: true }));
+        }"""
+    )
+    assert "drag-active" not in (page.locator("#upload-panel").get_attribute("class") or "")
+
+
+def test_dropping_file_on_upload_panel_populates_input(page_at_home: Page) -> None:
+    page = page_at_home
+    page.evaluate(
+        """() => {
+            const dt = new DataTransfer();
+            const file = new File(["fake"], "documento_arrastado.png", { type: "image/png" });
+            dt.items.add(file);
+            const panel = document.getElementById("upload-panel");
+            panel.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true }));
+        }"""
+    )
+    assert not page.locator("#submit").is_disabled()
+    assert "documento_arrastado.png" in page.locator("#status").inner_text()
+    assert "drag-active" not in (page.locator("#upload-panel").get_attribute("class") or "")
+
+
+def test_dropping_unsupported_file_shows_error(page_at_home: Page) -> None:
+    page = page_at_home
+    page.evaluate(
+        """() => {
+            const dt = new DataTransfer();
+            const file = new File(["fake"], "documento.txt", { type: "text/plain" });
+            dt.items.add(file);
+            const panel = document.getElementById("upload-panel");
+            panel.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true }));
+        }"""
+    )
+    assert "Formato não suportado" in page.locator("#status").inner_text()
+    assert "error" in (page.locator("#status").get_attribute("class") or "")

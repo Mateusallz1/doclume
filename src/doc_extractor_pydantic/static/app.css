@@ -56,7 +56,12 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 0; border
 }
 .notice { border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; background: var(--muted); color: var(--muted-foreground); }
 .upload-label { margin: 0 0 10px; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+#upload-panel { transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease; }
+#upload-panel.drag-active { border-color: var(--primary); border-style: dashed; background: var(--muted); box-shadow: 0 0 0 2px var(--ring); }
+#upload-panel.drag-active * { pointer-events: none; }
+#upload-panel.drag-active::after { content: "Solte o documento aqui para carregar"; display: block; margin-top: 10px; font-size: 0.8125rem; font-weight: 500; color: var(--foreground); }
 body.has-extracted main { padding-top: 24px; }
+
 body.has-extracted #upload-panel { padding: 14px 20px; }
 body.has-extracted .layout { height: var(--result-height, auto); }
 body.has-extracted .layout > .panel { overflow: auto; }

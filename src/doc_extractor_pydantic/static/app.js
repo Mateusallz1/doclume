@@ -3,8 +3,10 @@ const input = document.querySelector("#document");
 const submit = document.querySelector("#submit");
 const status = document.querySelector("#status");
 const introCopy = document.querySelector("#intro-copy");
+const uploadPanel = document.querySelector("#upload-panel");
 const uploadLabel = document.querySelector("#upload-label");
 const result = document.querySelector("#result");
+
 const imagePreview = document.querySelector("#image-preview");
 const focusPanel = document.querySelector("#focus-panel");
 const focusEmpty = document.querySelector("#focus-empty");
@@ -159,7 +161,88 @@ window.addEventListener("paste", (e) => {
   status.textContent = `Arquivo colado: ${file.name || "imagem da área de transferência"}.`;
 });
 
+let dragDepth = 0;
+
+function isFileDrag(e) {
+  return Boolean(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
+}
+
+uploadPanel.addEventListener("dragenter", (e) => {
+  if (!isFileDrag(e)) return;
+  uploadPanel.classList.add("drag-active");
+});
+
+window.addEventListener("dragenter", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth += 1;
+  uploadPanel.classList.add("drag-active");
+});
+
+window.addEventListener("dragover", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = "copy";
+  }
+  uploadPanel.classList.add("drag-active");
+});
+
+window.addEventListener("dragleave", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth -= 1;
+  if (dragDepth <= 0) {
+    dragDepth = 0;
+    uploadPanel.classList.remove("drag-active");
+  }
+});
+
+function handleDrop(e) {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  uploadPanel.classList.remove("drag-active");
+
+  const target = e.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.closest(".field-value") || target.isContentEditable || target.matches("input, textarea"))
+  ) {
+    return;
+  }
+
+  const files = e.dataTransfer?.files;
+  if (!files || !files.length) return;
+
+  const file = [...files].find(
+    (f) =>
+      f.type.startsWith("image/") ||
+      f.type === "application/pdf" ||
+      /\.(pdf|jpe?g|png|webp)$/i.test(f.name)
+  );
+
+  if (!file) {
+    status.className = "status error";
+    status.textContent = "Formato não suportado. Use PDF, JPG, JPEG, PNG ou WEBP.";
+    return;
+  }
+
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  status.textContent = `Arquivo selecionado: ${file.name}.`;
+}
+
+uploadPanel.addEventListener("drop", (e) => {
+  e.stopPropagation();
+  handleDrop(e);
+});
+window.addEventListener("drop", handleDrop);
+
 let zoomScale = 1;
+
 let panX = 0;
 let panY = 0;
 let rotationDeg = 0;

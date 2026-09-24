@@ -229,3 +229,11 @@ def test_status_feedback_supports_live_progress_and_timer() -> None:
     assert "formatSuccessMessage(data.durationMs)" in INDEX_HTML
     assert "analysisTimer = setInterval" in INDEX_HTML
     assert "clearInterval(analysisTimer)" in INDEX_HTML
+
+
+def test_upload_panel_supports_drag_and_drop_interaction() -> None:
+    assert "#upload-panel.drag-active" in INDEX_HTML
+    assert 'uploadPanel.classList.add("drag-active")' in INDEX_HTML
+    assert 'uploadPanel.classList.remove("drag-active")' in INDEX_HTML
+    assert "handleDrop(e)" in INDEX_HTML
+
